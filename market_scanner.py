@@ -1,55 +1,83 @@
 import ccxt
 
+
+# ============================================================
+# BÖRSEN
+# ============================================================
+
 EXCHANGES = {
-"kucoin": ccxt.kucoin({
-"enableRateLimit": True,
-"timeout": 10000
-}),
-"okx": ccxt.okx({
-"enableRateLimit": True,
-"timeout": 10000
-}),
-"bitget": ccxt.bitget({
-"enableRateLimit": True,
-"timeout": 10000
-}),
-"kraken": ccxt.kraken({
-"enableRateLimit": True,
-"timeout": 10000
-}),
-"coinbase": ccxt.coinbase({
-"enableRateLimit": True,
-"timeout": 10000
-}),
-"bitrue": ccxt.bitrue({
-"enableRateLimit": True,
-"timeout": 10000
-}),
+    "kucoin": ccxt.kucoin({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
+
+    "okx": ccxt.okx({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
+
+    "bitget": ccxt.bitget({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
+
+    "kraken": ccxt.kraken({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
+
+    "coinbase": ccxt.coinbase({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
+
+    "bitrue": ccxt.bitrue({
+        "enableRateLimit": True,
+        "timeout": 10000,
+    }),
 }
+
+
+# ============================================================
+# GEBÜHREN
+# ============================================================
 
 FEES = {
-"kucoin": 0.0010,
-"okx": 0.0010,
-"bitget": 0.0010,
-"kraken": 0.0026,
-"coinbase": 0.0040,
-"bitrue": 0.0020,
+    "kucoin": 0.0010,
+    "okx": 0.0010,
+    "bitget": 0.0010,
+    "kraken": 0.0026,
+    "coinbase": 0.0040,
+    "bitrue": 0.0020,
 }
 
-# Wir testen mehrere Tradegrößen.
+
+# ============================================================
+# TRADEGRÖSSEN
+# ============================================================
 
 TRADE_SIZES_USDT = [
-10.0,
-25.0,
-50.0,
-100.0,
-250.0,
-500.0,
-1000.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
 ]
+
+
+# ============================================================
+# EINSTELLUNGEN
+# ============================================================
 
 ORDERBOOK_LIMIT = 20
 MIN_PROFIT_PERCENT = 0.10
+
+
+# ============================================================
+# BTC PREISE
+# ============================================================
 
 def get_btc_prices():
 
@@ -58,12 +86,14 @@ def get_btc_prices():
     for name, exchange in EXCHANGES.items():
 
         try:
+
             ticker = exchange.fetch_ticker("BTC/USDT")
 
             bid = ticker.get("bid")
             ask = ticker.get("ask")
 
             if bid and ask:
+
                 prices[name] = {
                     "bid": float(bid),
                     "ask": float(ask),
@@ -73,407 +103,419 @@ def get_btc_prices():
                     f"{name.upper():10} "
                     f"BUY: ${ask:,.2f} | "
                     f"SELL: ${bid:,.2f}",
-                    flush=True
+                    flush=True,
                 )
 
         except Exception as e:
+
             print(
                 f"⚠️ {name.upper()}: {e}",
-                flush=True
+                flush=True,
             )
 
     return prices
 
+
+# ============================================================
+# ORDERBÜCHER LADEN
+# ============================================================
+
 def load_orderbooks(exchanges):
 
-```
-orderbooks = {}
+    orderbooks = {}
 
-print(
-    "\n🔎 Lade Orderbücher...",
-    flush=True
-)
+    print(
+        "\n🔎 Lade Orderbücher...",
+        flush=True,
+    )
 
-for name in exchanges:
+    for name in exchanges:
 
-    try:
+        try:
 
-        book = EXCHANGES[name].fetch_order_book(
-            "BTC/USDT",
-            limit=ORDERBOOK_LIMIT
-        )
+            book = EXCHANGES[name].fetch_order_book(
+                "BTC/USDT",
+                limit=ORDERBOOK_LIMIT,
+            )
 
-        asks = book.get("asks", [])
-        bids = book.get("bids", [])
+            asks = book.get("asks", [])
+            bids = book.get("bids", [])
 
-        if not asks or not bids:
+            if not asks or not bids:
+
+                print(
+                    f"⚠️ {name.upper()}: "
+                    f"kein gültiges Orderbuch",
+                    flush=True,
+                )
+
+                continue
+
+            orderbooks[name] = {
+                "asks": asks,
+                "bids": bids,
+            }
+
+            print(
+                f"✅ {name.upper()}: "
+                f"{len(bids)} Bids / "
+                f"{len(asks)} Asks",
+                flush=True,
+            )
+
+        except Exception as e:
 
             print(
                 f"⚠️ {name.upper()}: "
-                f"kein gültiges Orderbuch",
-                flush=True
+                f"Orderbuch-Fehler: {e}",
+                flush=True,
             )
 
-            continue
+    return orderbooks
 
-        orderbooks[name] = {
-            "asks": asks,
-            "bids": bids,
-        }
 
-        print(
-            f"✅ {name.upper()}: "
-            f"{len(bids)} Bids / "
-            f"{len(asks)} Asks",
-            flush=True
-        )
-
-    except Exception as e:
-
-        print(
-            f"⚠️ {name.upper()}: "
-            f"Orderbuch-Fehler: {e}",
-            flush=True
-        )
-
-return orderbooks
-```
+# ============================================================
+# BTC KAUFEN
+# ============================================================
 
 def buy_from_orderbook(asks, usdt):
 
-```
-remaining = usdt
-btc = 0.0
-cost = 0.0
+    remaining = float(usdt)
+    btc = 0.0
+    cost = 0.0
 
-for level in asks:
+    for level in asks:
 
-    if len(level) < 2:
-        continue
+        if len(level) < 2:
+            continue
 
-    try:
+        try:
 
-        price = float(level[0])
-        quantity = float(level[1])
+            price = float(level[0])
+            quantity = float(level[1])
 
-    except Exception:
+        except Exception:
 
-        continue
+            continue
 
-    if price <= 0 or quantity <= 0:
-        continue
+        if price <= 0 or quantity <= 0:
+            continue
 
-    available = price * quantity
+        available_usdt = price * quantity
 
-    spend = min(
-        remaining,
-        available
-    )
+        spend = min(
+            remaining,
+            available_usdt,
+        )
 
-    btc += spend / price
-    cost += spend
-    remaining -= spend
+        btc += spend / price
+        cost += spend
+        remaining -= spend
 
-    if remaining <= 0.00000001:
-        break
+        if remaining <= 0.00000001:
+            break
 
-if remaining > 0.00000001 or btc <= 0:
+    if remaining > 0.00000001 or btc <= 0:
+        return None
 
-    return None
+    return btc, cost
 
-return btc, cost
-```
+
+# ============================================================
+# BTC VERKAUFEN
+# ============================================================
 
 def sell_to_orderbook(bids, btc):
 
-```
-remaining = btc
-revenue = 0.0
+    remaining = float(btc)
+    revenue = 0.0
 
-for level in bids:
+    for level in bids:
 
-    if len(level) < 2:
-        continue
+        if len(level) < 2:
+            continue
 
-    try:
+        try:
 
-        price = float(level[0])
-        quantity = float(level[1])
+            price = float(level[0])
+            quantity = float(level[1])
 
-    except Exception:
+        except Exception:
 
-        continue
+            continue
 
-    if price <= 0 or quantity <= 0:
-        continue
+        if price <= 0 or quantity <= 0:
+            continue
 
-    amount = min(
-        remaining,
-        quantity
-    )
+        amount = min(
+            remaining,
+            quantity,
+        )
 
-    revenue += amount * price
-    remaining -= amount
+        revenue += amount * price
+        remaining -= amount
 
-    if remaining <= 0.00000001:
-        break
+        if remaining <= 0.00000001:
+            break
 
-if remaining > 0.00000001:
+    if remaining > 0.00000001:
+        return None
 
-    return None
+    return revenue
 
-return revenue
-```
+
+# ============================================================
+# EINZELNEN TRADE BERECHNEN
+# ============================================================
 
 def calculate_trade(
-buy_exchange,
-sell_exchange,
-orderbooks,
-trade_size_usdt
+    buy_exchange,
+    sell_exchange,
+    orderbooks,
+    trade_size_usdt,
 ):
 
-```
-buy_book = orderbooks[buy_exchange]
-sell_book = orderbooks[sell_exchange]
+    buy_book = orderbooks[buy_exchange]
+    sell_book = orderbooks[sell_exchange]
 
-buy_result = buy_from_orderbook(
-    buy_book["asks"],
-    trade_size_usdt
-)
+    buy_result = buy_from_orderbook(
+        buy_book["asks"],
+        trade_size_usdt,
+    )
 
-if buy_result is None:
+    if buy_result is None:
+        return None
 
-    return None
+    btc_amount, raw_buy_cost = buy_result
 
-btc_amount, raw_buy_cost = buy_result
+    raw_sell_revenue = sell_to_orderbook(
+        sell_book["bids"],
+        btc_amount,
+    )
 
-raw_sell_revenue = sell_to_orderbook(
-    sell_book["bids"],
-    btc_amount
-)
+    if raw_sell_revenue is None:
+        return None
 
-if raw_sell_revenue is None:
+    buy_fee = FEES[buy_exchange]
+    sell_fee = FEES[sell_exchange]
 
-    return None
+    total_buy_cost = (
+        raw_buy_cost * (1 + buy_fee)
+    )
 
-buy_fee = FEES[buy_exchange]
-sell_fee = FEES[sell_exchange]
+    total_sell_revenue = (
+        raw_sell_revenue * (1 - sell_fee)
+    )
 
-total_buy_cost = (
-    raw_buy_cost
-    * (1 + buy_fee)
-)
+    profit = (
+        total_sell_revenue
+        - total_buy_cost
+    )
 
-total_sell_revenue = (
-    raw_sell_revenue
-    * (1 - sell_fee)
-)
+    profit_percent = (
+        profit / total_buy_cost
+    ) * 100
 
-profit = (
-    total_sell_revenue
-    - total_buy_cost
-)
+    average_buy = (
+        raw_buy_cost / btc_amount
+    )
 
-profit_percent = (
-    profit
-    / total_buy_cost
-) * 100
+    average_sell = (
+        raw_sell_revenue / btc_amount
+    )
 
-average_buy = (
-    raw_buy_cost
-    / btc_amount
-)
+    return {
+        "buy_exchange": buy_exchange,
+        "sell_exchange": sell_exchange,
+        "buy_price": average_buy,
+        "sell_price": average_sell,
+        "btc_amount": btc_amount,
+        "trade_size": trade_size_usdt,
+        "net_profit": profit,
+        "net_profit_percent": profit_percent,
+    }
 
-average_sell = (
-    raw_sell_revenue
-    / btc_amount
-)
 
-return {
-    "buy_exchange": buy_exchange,
-    "sell_exchange": sell_exchange,
-    "buy_price": average_buy,
-    "sell_price": average_sell,
-    "btc_amount": btc_amount,
-    "trade_size": trade_size_usdt,
-    "net_profit": profit,
-    "net_profit_percent": profit_percent,
-}
-```
+# ============================================================
+# BESTE ARBITRAGE-CHANCE SUCHEN
+# ============================================================
 
 def find_best_opportunity(prices):
 
-```
-if len(prices) < 2:
+    if len(prices) < 2:
 
-    print(
-        "❌ Zu wenige Börsen.",
-        flush=True
+        print(
+            "❌ Zu wenige Börsen.",
+            flush=True,
+        )
+
+        return None
+
+    orderbooks = load_orderbooks(
+        prices.keys()
     )
 
-    return None
+    if len(orderbooks) < 2:
 
-orderbooks = load_orderbooks(
-    prices.keys()
-)
+        print(
+            "❌ Zu wenige Orderbücher.",
+            flush=True,
+        )
 
-if len(orderbooks) < 2:
+        return None
 
     print(
-        "❌ Zu wenige Orderbücher.",
-        flush=True
+        "\n🧠 Berechne alle "
+        "Arbitrage-Kombinationen "
+        "und Tradegrößen...",
+        flush=True,
     )
 
-    return None
+    best = None
 
-print(
-    "\n🧠 Berechne alle "
-    "Arbitrage-Kombinationen "
-    "und Tradegrößen...",
-    flush=True
-)
+    combinations = 0
+    calculations = 0
 
-best = None
-combinations = 0
-calculations = 0
+    exchanges = list(
+        orderbooks.keys()
+    )
 
-exchanges = list(
-    orderbooks.keys()
-)
+    for buy in exchanges:
 
-for buy in exchanges:
+        for sell in exchanges:
 
-    for sell in exchanges:
-
-        if buy == sell:
-            continue
-
-        combinations += 1
-
-        for trade_size in TRADE_SIZES_USDT:
-
-            calculations += 1
-
-            result = calculate_trade(
-                buy,
-                sell,
-                orderbooks,
-                trade_size
-            )
-
-            if result is None:
+            if buy == sell:
                 continue
 
-            if (
-                best is None
-                or result["net_profit_percent"]
-                > best["net_profit_percent"]
-            ):
+            combinations += 1
 
-                best = result
+            for trade_size in TRADE_SIZES_USDT:
 
-print(
-    f"🔢 Börsen-Kombinationen: "
-    f"{combinations}",
-    flush=True
-)
+                calculations += 1
 
-print(
-    f"🔢 Berechnete Trades: "
-    f"{calculations}",
-    flush=True
-)
+                result = calculate_trade(
+                    buy,
+                    sell,
+                    orderbooks,
+                    trade_size,
+                )
 
-if best is None:
+                if result is None:
+                    continue
 
-    print(
-        "❌ Keine auswertbare Kombination.",
-        flush=True
-    )
+                if (
+                    best is None
+                    or result["net_profit_percent"]
+                    > best["net_profit_percent"]
+                ):
 
-    return None
-
-print(
-    "\n" + "=" * 65,
-    flush=True
-)
-
-print(
-    "🧠 BTC REAL ORDERBOOK "
-    "TRADE-SIZE ANALYSIS",
-    flush=True
-)
-
-print(
-    "=" * 65,
-    flush=True
-)
-
-print(
-    f"Kaufen:       "
-    f"{best['buy_exchange'].upper()}",
-    flush=True
-)
-
-print(
-    f"Ø Kaufpreis:  "
-    f"${best['buy_price']:,.2f}",
-    flush=True
-)
-
-print(
-    f"Verkaufen:    "
-    f"{best['sell_exchange'].upper()}",
-    flush=True
-)
-
-print(
-    f"Ø Verkauf:    "
-    f"${best['sell_price']:,.2f}",
-    flush=True
-)
-
-print(
-    f"BTC-Menge:    "
-    f"{best['btc_amount']:.8f}",
-    flush=True
-)
-
-print(
-    f"Optimale Größe: "
-    f"${best['trade_size']:,.2f}",
-    flush=True
-)
-
-print(
-    f"\nNETTO-GEWINN: "
-    f"${best['net_profit']:,.4f}",
-    flush=True
-)
-
-print(
-    f"NETTO: "
-    f"{best['net_profit_percent']:.4f}%",
-    flush=True
-)
-
-if best["net_profit_percent"] >= MIN_PROFIT_PERCENT:
+                    best = result
 
     print(
-        "\n🟢 PAPER-TRADE-KANDIDAT",
-        flush=True
+        f"🔢 Börsen-Kombinationen: "
+        f"{combinations}",
+        flush=True,
     )
-
-else:
 
     print(
-        "\n🔴 NICHT PROFITABEL",
-        flush=True
+        f"🔢 Berechnete Trades: "
+        f"{calculations}",
+        flush=True,
     )
 
-print(
-    "=" * 65,
-    flush=True
-)
+    if best is None:
 
-return best
+        print(
+            "❌ Keine auswertbare Kombination.",
+            flush=True,
+        )
+
+        return None
+
+    print(
+        "\n" + "=" * 65,
+        flush=True,
+    )
+
+    print(
+        "🧠 BTC REAL ORDERBOOK "
+        "TRADE-SIZE ANALYSIS",
+        flush=True,
+    )
+
+    print(
+        "=" * 65,
+        flush=True,
+    )
+
+    print(
+        f"Kaufen:          "
+        f"{best['buy_exchange'].upper()}",
+        flush=True,
+    )
+
+    print(
+        f"Ø Kaufpreis:     "
+        f"${best['buy_price']:,.2f}",
+        flush=True,
+    )
+
+    print(
+        f"Verkaufen:       "
+        f"{best['sell_exchange'].upper()}",
+        flush=True,
+    )
+
+    print(
+        f"Ø Verkauf:       "
+        f"${best['sell_price']:,.2f}",
+        flush=True,
+    )
+
+    print(
+        f"BTC-Menge:       "
+        f"{best['btc_amount']:.8f}",
+        flush=True,
+    )
+
+    print(
+        f"Optimale Größe:  "
+        f"${best['trade_size']:,.2f}",
+        flush=True,
+    )
+
+    print(
+        f"\nNETTO-GEWINN: "
+        f"${best['net_profit']:,.4f}",
+        flush=True,
+    )
+
+    print(
+        f"NETTO: "
+        f"{best['net_profit_percent']:.4f}%",
+        flush=True,
+    )
+
+    if (
+        best["net_profit_percent"]
+        >= MIN_PROFIT_PERCENT
+    ):
+
+        print(
+            "\n🟢 PAPER-TRADE-KANDIDAT",
+            flush=True,
+        )
+
+    else:
+
+        print(
+            "\n🔴 NICHT PROFITABEL",
+            flush=True,
+        )
+
+    print(
+        "=" * 65,
+        flush=True,
+    )
+
+    return best
