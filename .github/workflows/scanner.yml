@@ -1,4 +1,3 @@
-```yaml
 name: BTC Multi-Exchange Paper Trader
 
 on:
@@ -29,4 +28,3 @@ jobs:
       - name: Start Paper Trader
         run: |
           python -u main.py
-```
