@@ -6,7 +6,6 @@ class PaperTrader:
         trade_size=1000.0,
         min_profit_percent=0.10
     ):
-
         self.starting_balance = float(starting_balance)
         self.balance = float(starting_balance)
 
@@ -24,6 +23,9 @@ class PaperTrader:
 
         self.best_trade = None
         self.worst_trade = None
+
+    def register_scan(self):
+        self.scans += 1
 
     def evaluate_trade(self, opportunity):
 
@@ -57,71 +59,68 @@ class PaperTrader:
             )
         )
 
-        print("\n" + "=" * 65)
-        print("🤖 PAPER TRADING ENGINE")
-        print("=" * 65)
+        print("\n" + "=" * 65, flush=True)
+        print("🤖 PAPER TRADING ENGINE", flush=True)
+        print("=" * 65, flush=True)
 
         print(
-            f"Kaufen:       {buy_exchange.upper()}"
+            f"Kaufen:       {buy_exchange.upper()}",
+            flush=True
         )
 
         print(
-            f"Verkaufen:    {sell_exchange.upper()}"
+            f"Verkaufen:    {sell_exchange.upper()}",
+            flush=True
         )
 
         print(
-            f"Tradegröße:   ${trade_size:,.2f}"
+            f"Tradegröße:   ${trade_size:,.2f}",
+            flush=True
         )
 
         print(
-            f"Netto:        {profit_percent:.4f}%"
+            f"Netto:        {profit_percent:.4f}%",
+            flush=True
         )
 
         print(
-            f"Netto-Gewinn: ${profit:,.4f}"
+            f"Netto-Gewinn: ${profit:,.4f}",
+            flush=True
         )
-
-        # --------------------------------------------------
-        # Prüfen, ob der Trade profitabel genug ist
-        # --------------------------------------------------
 
         if profit_percent < self.min_profit_percent:
 
             self.rejected_trades += 1
 
             print(
-                "\n🔴 PAPER TRADE ABGELEHNT"
+                "\n🔴 PAPER TRADE ABGELEHNT",
+                flush=True
             )
 
             print(
                 f"Grund: Netto-Gewinn "
-                f"unter {self.min_profit_percent:.2f}%"
+                f"unter {self.min_profit_percent:.2f}%",
+                flush=True
             )
 
             return False
-
-        # --------------------------------------------------
-        # Kapital prüfen
-        # --------------------------------------------------
 
         if trade_size > self.balance:
 
             self.rejected_trades += 1
 
             print(
-                "\n🔴 PAPER TRADE ABGELEHNT"
+                "\n🔴 PAPER TRADE ABGELEHNT",
+                flush=True
             )
 
             print(
                 "Grund: Nicht genügend "
-                "virtuelles Kapital"
+                "virtuelles Kapital",
+                flush=True
             )
 
             return False
-
-        # --------------------------------------------------
-        # Paper Trade ausführen
-        # --------------------------------------------------
 
         self.accepted_trades += 1
 
@@ -129,78 +128,58 @@ class PaperTrader:
         self.total_profit += profit
 
         if profit > 0:
-
             self.winning_trades += 1
 
         elif profit < 0:
-
             self.losing_trades += 1
 
-        # --------------------------------------------------
-        # Bester Trade
-        # --------------------------------------------------
+        trade = {
+            "profit": profit,
+            "profit_percent": profit_percent,
+            "buy_exchange": buy_exchange,
+            "sell_exchange": sell_exchange,
+            "trade_size": trade_size,
+        }
 
         if (
             self.best_trade is None
             or profit > self.best_trade["profit"]
         ):
-
-            self.best_trade = {
-                "profit": profit,
-                "profit_percent": profit_percent,
-                "buy_exchange": buy_exchange,
-                "sell_exchange": sell_exchange,
-                "trade_size": trade_size,
-            }
-
-        # --------------------------------------------------
-        # Schlechtester Trade
-        # --------------------------------------------------
+            self.best_trade = trade.copy()
 
         if (
             self.worst_trade is None
             or profit < self.worst_trade["profit"]
         ):
-
-            self.worst_trade = {
-                "profit": profit,
-                "profit_percent": profit_percent,
-                "buy_exchange": buy_exchange,
-                "sell_exchange": sell_exchange,
-                "trade_size": trade_size,
-            }
+            self.worst_trade = trade.copy()
 
         print(
-            "\n🟢 PAPER TRADE AUSGEFÜHRT"
+            "\n🟢 PAPER TRADE AUSGEFÜHRT",
+            flush=True
         )
 
         print(
-            f"Gewinn:       ${profit:,.4f}"
+            f"Gewinn:       ${profit:,.4f}",
+            flush=True
         )
 
         print(
-            f"Neues Kapital: ${self.balance:,.2f}"
+            f"Neues Kapital: ${self.balance:,.2f}",
+            flush=True
         )
 
-        print("=" * 65)
+        print("=" * 65, flush=True)
 
         return True
-
-    def register_scan(self):
-
-        self.scans += 1
 
     def print_statistics(self):
 
         if self.accepted_trades > 0:
-
             win_rate = (
                 self.winning_trades
                 / self.accepted_trades
             ) * 100
-
         else:
-
             win_rate = 0.0
 
         return_percent = (
@@ -211,152 +190,142 @@ class PaperTrader:
             / self.starting_balance
         ) * 100
 
-        print("\n" + "=" * 65)
-        print("📊 PAPER TRADING STATISTIK")
-        print("=" * 65)
-
         print(
-            f"Scans:              {self.scans}"
+            "\n" + "=" * 65,
+            flush=True
         )
 
         print(
-            f"Arbitrage-Chancen:  {self.opportunities}"
+            "📊 PAPER TRADING STATISTIK",
+            flush=True
         )
 
         print(
-            f"Paper Trades:       {self.accepted_trades}"
+            "=" * 65,
+            flush=True
         )
 
         print(
-            f"Abgelehnt:          {self.rejected_trades}"
+            f"Scans:              {self.scans}",
+            flush=True
         )
 
         print(
-            f"Gewinner:           {self.winning_trades}"
+            f"Arbitrage-Chancen:  {self.opportunities}",
+            flush=True
         )
 
         print(
-            f"Verlierer:          {self.losing_trades}"
+            f"Paper Trades:       {self.accepted_trades}",
+            flush=True
         )
 
         print(
-            f"Trefferquote:       {win_rate:.2f}%"
+            f"Abgelehnt:          {self.rejected_trades}",
+            flush=True
         )
 
-        print("-" * 65)
+        print(
+            f"Gewinner:           {self.winning_trades}",
+            flush=True
+        )
+
+        print(
+            f"Verlierer:          {self.losing_trades}",
+            flush=True
+        )
+
+        print(
+            f"Trefferquote:       {win_rate:.2f}%",
+            flush=True
+        )
+
+        print("-" * 65, flush=True)
 
         print(
             f"Startkapital:       "
-            f"${self.starting_balance:,.2f}"
+            f"${self.starting_balance:,.2f}",
+            flush=True
         )
 
         print(
             f"Aktuelles Kapital:  "
-            f"${self.balance:,.2f}"
+            f"${self.balance:,.2f}",
+            flush=True
         )
 
         print(
             f"Gesamtgewinn:       "
-            f"${self.total_profit:,.4f}"
+            f"${self.total_profit:,.4f}",
+            flush=True
         )
 
         print(
             f"Rendite:            "
-            f"{return_percent:.4f}%"
+            f"{return_percent:.4f}%",
+            flush=True
         )
-
-        # --------------------------------------------------
-        # Bester Trade
-        # --------------------------------------------------
 
         if self.best_trade:
 
-            print("\n🏆 BESTER PAPER TRADE")
+            print(
+                "\n🏆 BESTER PAPER TRADE",
+                flush=True
+            )
 
             print(
                 f"Gewinn:             "
-                f"${self.best_trade['profit']:,.4f}"
+                f"${self.best_trade['profit']:,.4f}",
+                flush=True
             )
 
             print(
                 f"Netto:              "
-                f"{self.best_trade['profit_percent']:.4f}%"
+                f"{self.best_trade['profit_percent']:.4f}%",
+                flush=True
             )
 
             print(
                 f"BUY:                "
-                f"{self.best_trade['buy_exchange'].upper()}"
+                f"{self.best_trade['buy_exchange'].upper()}",
+                flush=True
             )
 
             print(
                 f"SELL:               "
-                f"{self.best_trade['sell_exchange'].upper()}"
+                f"{self.best_trade['sell_exchange'].upper()}",
+                flush=True
             )
-
-        # --------------------------------------------------
-        # Schlechtester Trade
-        # --------------------------------------------------
 
         if self.worst_trade:
 
-            print("\n📉 SCHLECHTESTER PAPER TRADE")
+            print(
+                "\n📉 SCHLECHTESTER PAPER TRADE",
+                flush=True
+            )
 
             print(
                 f"Gewinn:             "
-                f"${self.worst_trade['profit']:,.4f}"
+                f"${self.worst_trade['profit']:,.4f}",
+                flush=True
             )
 
             print(
                 f"Netto:              "
-                f"{self.worst_trade['profit_percent']:.4f}%"
+                f"{self.worst_trade['profit_percent']:.4f}%",
+                flush=True
             )
 
             print(
                 f"BUY:                "
-                f"{self.worst_trade['buy_exchange'].upper()}"
+                f"{self.worst_trade['buy_exchange'].upper()}",
+                flush=True
             )
 
             print(
                 f"SELL:               "
-                f"{self.worst_trade['sell_exchange'].upper()}"
+                f"{self.worst_trade['sell_exchange'].upper()}",
+                flush=True
             )
 
-        print("=" * 65)
-```
-
-Und in deiner **`main.py`** ergänzen wir innerhalb der `while True:`-Schleife direkt nach:
-
-```python
-print("🔎 SCAN", flush=True)
-```
-
-diese Zeile:
-
-```python
-trader.register_scan()
-```
-
-Danach läuft jeder Scan in etwa so:
-
-```text
-🔎 SCAN
-
-Preise...
-Orderbücher...
-210 Berechnungen...
-
-🔴 NICHT PROFITABEL
-
-📊 PAPER TRADING STATISTIK
-Scans:              25
-Arbitrage-Chancen:  25
-Paper Trades:       0
-Abgelehnt:          25
-
-Startkapital:       $10,000.00
-Aktuelles Kapital:  $10,000.00
-Gesamtgewinn:       $0.0000
-Rendite:            0.0000%
-```
-
-Das Entscheidende: **Wir lassen den Bot jetzt erst einmal laufen und sammeln echte Daten.** Keine echten Orders, kein Risiko.
+        print("=" * 65, flush=True)
