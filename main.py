@@ -1,10 +1,6 @@
 import time
 
-from market_scanner import (
-    get_btc_prices,
-    find_best_opportunity
-)
-
+from market_scanner import get_btc_prices, find_best_opportunity
 from paper_trader import PaperTrader
 
 
@@ -30,16 +26,12 @@ def main():
 
         try:
 
-            print(
-                "📡 Rufe Börsenkurse ab...",
-                flush=True
-            )
+            print("📡 Rufe Börsenkurse ab...", flush=True)
 
             prices = get_btc_prices()
 
             print(
-                f"✅ PREISE ERHALTEN: "
-                f"{len(prices)} Börsen",
+                f"✅ PREISE ERHALTEN: {len(prices)} Börsen",
                 flush=True
             )
 
@@ -113,7 +105,7 @@ def main():
             )
 
         print(
-            "\n⏳ Nächster Scan in "
+            f"\n⏳ Nächster Scan in "
             f"{SCAN_INTERVAL} Sekunden...",
             flush=True
         )
