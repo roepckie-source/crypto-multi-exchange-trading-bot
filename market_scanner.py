@@ -1,5 +1,4 @@
 import ccxt
-import time
 
 
 EXCHANGES = {
@@ -67,14 +66,14 @@ def find_best_opportunity(prices):
     print("🚀 BESTE BTC-ARBITRAGE-CHANCE")
     print("=" * 60)
 
-    print(f"Kaufen:  {buy_exchange.upper()}")
-    print(f"Preis:   ${buy_data['ask']:,.2f}")
+    print(f"Kaufen:    {buy_exchange.upper()}")
+    print(f"Preis:     ${buy_data['ask']:,.2f}")
 
-    print(f"\nVerkaufen: {sell_exchange.upper()}")
+    print(f"Verkaufen: {sell_exchange.upper()}")
     print(f"Preis:     ${sell_data['bid']:,.2f}")
 
-    print(f"\nSpread: ${spread:,.2f}")
-    print(f"Spread %: {spread_percent:.4f}%")
+    print(f"\nSpread:    ${spread:,.2f}")
+    print(f"Spread %:  {spread_percent:.4f}%")
 
     if spread_percent > 0:
         print("🟢 Positive Preis-Differenz")
@@ -89,14 +88,8 @@ def main():
     print("📊 BTC Market Scanner")
     print("🧪 MODE: PAPER TRADING\n")
 
-    while True:
-        prices = get_btc_prices()
-
-        find_best_opportunity(prices)
-
-        print("\n⏳ Nächster Scan in 30 Sekunden...\n")
-
-        time.sleep(30)
+    prices = get_btc_prices()
+    find_best_opportunity(prices)
 
 
 if __name__ == "__main__":
