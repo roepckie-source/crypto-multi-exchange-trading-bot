@@ -1,43 +1,23 @@
-python
+```python
 import time
 from datetime import datetime
 
-from market_scanner import (
-    get_btc_prices,
-    find_best_opportunity
-)
-
+from market_scanner import get_btc_prices, find_best_opportunity
 from paper_trader import PaperTrader
 
 
 SCAN_INTERVAL = 30
 
 
-print(
-    "🚀 MAIN.PY WURDE GESTARTET",
-    flush=True
-)
+print("🚀 MAIN.PY WURDE GESTARTET", flush=True)
 
 
 def main():
 
     print("\n" + "=" * 65, flush=True)
-
-    print(
-        "🚀 CRYPTO MULTI-EXCHANGE TRADING BOT",
-        flush=True
-    )
-
-    print(
-        "📊 BTC REAL ORDERBOOK ARBITRAGE",
-        flush=True
-    )
-
-    print(
-        "🤖 PAPER TRADING MODE",
-        flush=True
-    )
-
+    print("🚀 CRYPTO MULTI-EXCHANGE TRADING BOT", flush=True)
+    print("📊 BTC REAL ORDERBOOK ARBITRAGE", flush=True)
+    print("🤖 PAPER TRADING MODE", flush=True)
     print("=" * 65, flush=True)
 
     trader = PaperTrader(
@@ -47,26 +27,22 @@ def main():
     )
 
     print(
-        f"\n💰 Virtuelles Startkapital: "
-        f"${trader.starting_balance:,.2f}",
+        f"\n💰 Virtuelles Startkapital: ${trader.starting_balance:,.2f}",
         flush=True
     )
 
     print(
-        f"💵 Tradegröße: "
-        f"${trader.trade_size:,.2f}",
+        f"💵 Tradegröße: ${trader.trade_size:,.2f}",
         flush=True
     )
 
     print(
-        f"🎯 Mindest-Netto-Gewinn: "
-        f"{trader.min_profit_percent:.2f}%",
+        f"🎯 Mindest-Netto-Gewinn: {trader.min_profit_percent:.2f}%",
         flush=True
     )
 
     print(
-        f"⏱️ Scan-Intervall: "
-        f"{SCAN_INTERVAL} Sekunden",
+        f"⏱️ Scan-Intervall: {SCAN_INTERVAL} Sekunden",
         flush=True
     )
 
@@ -79,10 +55,7 @@ def main():
 
         while True:
 
-            print(
-                "\n" + "=" * 65,
-                flush=True
-            )
+            print("\n" + "=" * 65, flush=True)
 
             print(
                 "🔎 NEUER MARKT-SCAN",
@@ -90,17 +63,13 @@ def main():
             )
 
             print(
-                datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 flush=True
             )
 
-            print(
-                "=" * 65,
-                flush=True
-            )
+            print("=" * 65, flush=True)
 
+            # Preise abrufen
             print(
                 "\n🔎 STARTE PREISABFRAGE",
                 flush=True
@@ -109,8 +78,7 @@ def main():
             prices = get_btc_prices()
 
             print(
-                f"\n✅ PREISE ERHALTEN: "
-                f"{len(prices)} BÖRSEN",
+                f"\n✅ PREISE ERHALTEN: {len(prices)} BÖRSEN",
                 flush=True
             )
 
@@ -121,20 +89,16 @@ def main():
                     flush=True
                 )
 
-                time.sleep(
-                    SCAN_INTERVAL
-                )
-
+                time.sleep(SCAN_INTERVAL)
                 continue
 
+            # Orderbuch analysieren
             print(
                 "\n🧠 STARTE ORDERBOOK-ANALYSE",
                 flush=True
             )
 
-            opportunity = find_best_opportunity(
-                prices
-            )
+            opportunity = find_best_opportunity(prices)
 
             print(
                 "\n✅ ANALYSE ZURÜCKGEKEHRT",
@@ -142,11 +106,11 @@ def main():
             )
 
             print(
-                f"Opportunity vorhanden: "
-                f"{opportunity is not None}",
+                f"Opportunity vorhanden: {opportunity is not None}",
                 flush=True
             )
 
+            # Paper Trading
             if opportunity:
 
                 print(
@@ -175,6 +139,7 @@ def main():
                     flush=True
                 )
 
+            # Statistik
             print(
                 "\n📊 AKTUELLE PAPER-TRADING-STATISTIK",
                 flush=True
@@ -192,29 +157,22 @@ def main():
                     flush=True
                 )
 
+            # Warten
             print(
-                f"\n⏳ Nächster Scan in "
-                f"{SCAN_INTERVAL} Sekunden...",
+                f"\n⏳ Nächster Scan in {SCAN_INTERVAL} Sekunden...",
                 flush=True
             )
 
-            time.sleep(
-                SCAN_INTERVAL
-            )
+            time.sleep(SCAN_INTERVAL)
 
     except KeyboardInterrupt:
 
         print(
-            "\n\n🛑 PAPER TRADING MANUELL BEENDET",
+            "\n🛑 PAPER TRADING MANUELL BEENDET",
             flush=True
         )
 
-        try:
-
-            trader.print_statistics()
-
-        except Exception:
-            pass
+        trader.print_statistics()
 
     except Exception as e:
 
@@ -232,5 +190,5 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
+```
