@@ -13,9 +13,8 @@ SCAN_INTERVAL = 30
 
 def main():
 
-    print("🚀 START BTC ARBITRAGE BOT", flush=True)
+    print("🚀 START BTC SCANNER", flush=True)
     print("🤖 PAPER TRADING AKTIV", flush=True)
-    print("⏱️ Scan-Intervall: 30 Sekunden", flush=True)
 
     trader = PaperTrader(
         starting_balance=10000.0,
@@ -67,7 +66,7 @@ def main():
                 if opportunity:
 
                     print(
-                        "\n📊 OPPORTUNITY",
+                        "\n📊 BESTE OPPORTUNITY",
                         flush=True
                     )
 
