@@ -9,22 +9,52 @@ class PaperTrader:
         trade_size=1000.0,
         min_profit_percent=0.10
     ):
-        self.balance = starting_balance
-        self.starting_balance = starting_balance
-        self.trade_size = trade_size
-        self.min_profit_percent = min_profit_percent
+
+        self.balance = (
+            starting_balance
+        )
+
+        self.starting_balance = (
+            starting_balance
+        )
+
+        self.trade_size = (
+            trade_size
+        )
+
+        self.min_profit_percent = (
+            min_profit_percent
+        )
 
         self.trades = 0
+
         self.profitable_trades = 0
+
         self.total_profit = 0.0
 
-    def evaluate_trade(self, opportunity):
+    def evaluate_trade(
+        self,
+        opportunity
+    ):
 
-        net_profit_percent = opportunity["net_profit_percent"]
+        net_profit_percent = (
+            opportunity[
+                "net_profit_percent"
+            ]
+        )
 
-        print("\n" + "=" * 65)
-        print("🤖 PAPER TRADING ENGINE")
-        print("=" * 65)
+        print(
+            "\n"
+            + "=" * 65
+        )
+
+        print(
+            "🤖 PAPER TRADING ENGINE"
+        )
+
+        print(
+            "=" * 65
+        )
 
         print(
             f"Virtuelles Kapital: "
@@ -46,10 +76,22 @@ class PaperTrader:
             f"{net_profit_percent:.4f}%"
         )
 
-        if net_profit_percent < self.min_profit_percent:
+        # Kein Trade unterhalb
+        # unserer Mindestprofitabilität.
 
-            print("\n🔴 PAPER TRADE ABGELEHNT")
-            print("Grund: Netto-Gewinn unter Mindestgrenze")
+        if (
+            net_profit_percent
+            < self.min_profit_percent
+        ):
+
+            print(
+                "\n🔴 PAPER TRADE ABGELEHNT"
+            )
+
+            print(
+                "Grund: Netto-Gewinn "
+                "unter Mindestgrenze"
+            )
 
             return False
 
@@ -60,12 +102,16 @@ class PaperTrader:
         )
 
         self.balance += profit
+
         self.total_profit += profit
 
         self.trades += 1
+
         self.profitable_trades += 1
 
-        print("\n🟢 PAPER TRADE AUSGEFÜHRT")
+        print(
+            "\n🟢 PAPER TRADE AUSGEFÜHRT"
+        )
 
         print(
             f"Kaufen: "
@@ -92,14 +138,21 @@ class PaperTrader:
             f"${self.balance:,.2f}"
         )
 
-        print("=" * 65)
+        print(
+            "=" * 65
+        )
 
         return True
 
     def print_statistics(self):
 
-        print("\n📊 PAPER TRADING STATISTIK")
-        print("=" * 65)
+        print(
+            "\n📊 PAPER TRADING STATISTIK"
+        )
+
+        print(
+            "=" * 65
+        )
 
         print(
             f"Startkapital: "
@@ -138,4 +191,6 @@ class PaperTrader:
             f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
-        print("=" * 65)
+        print(
+            "=" * 65
+        )
