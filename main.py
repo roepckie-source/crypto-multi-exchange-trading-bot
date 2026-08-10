@@ -1,6 +1,10 @@
 import time
 
-from market_scanner import get_btc_prices, find_best_opportunity
+from market_scanner import (
+    get_btc_prices,
+    find_best_opportunity
+)
+
 from paper_trader import PaperTrader
 
 
@@ -11,6 +15,7 @@ def main():
 
     print("🚀 START BTC SCANNER", flush=True)
     print("🤖 PAPER TRADING AKTIV", flush=True)
+    print("⏱️ SCAN-INTERVALL: 30 SEKUNDEN", flush=True)
 
     trader = PaperTrader(
         starting_balance=10000.0,
@@ -24,16 +29,16 @@ def main():
         print("🔎 NEUER SCAN", flush=True)
         print("=" * 65, flush=True)
 
+        trader.register_scan()
+
         try:
 
-            print("📡 Rufe Börsenkurse ab...", flush=True)
-
-            prices = get_btc_prices()
-
             print(
-                f"✅ PREISE ERHALTEN: {len(prices)} Börsen",
+                "📡 Rufe Börsenkurse ab...",
                 flush=True
             )
+
+            prices = get_btc_prices()
 
             if not prices:
 
@@ -43,6 +48,12 @@ def main():
                 )
 
             else:
+
+                print(
+                    f"✅ PREISE ERHALTEN: "
+                    f"{len(prices)} BÖRSEN",
+                    flush=True
+                )
 
                 print(
                     "\n🧠 STARTE ORDERBOOK-ANALYSE",
@@ -93,16 +104,7 @@ def main():
             flush=True
         )
 
-        try:
-
-            trader.print_statistics()
-
-        except Exception as e:
-
-            print(
-                f"⚠️ Statistik-Fehler: {e}",
-                flush=True
-            )
+        trader.print_statistics()
 
         print(
             f"\n⏳ Nächster Scan in "
