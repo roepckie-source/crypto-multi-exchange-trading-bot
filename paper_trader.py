@@ -98,8 +98,8 @@ class PaperTrader:
             )
 
             print(
-                f"Grund: Netto-Gewinn "
-                f"unter {self.min_profit_percent:.2f}%",
+                f"Grund: Netto-Gewinn unter "
+                f"{self.min_profit_percent:.2f}%",
                 flush=True
             )
 
@@ -115,8 +115,7 @@ class PaperTrader:
             )
 
             print(
-                "Grund: Nicht genügend "
-                "virtuelles Kapital",
+                "Grund: Nicht genügend virtuelles Kapital",
                 flush=True
             )
 
@@ -190,20 +189,9 @@ class PaperTrader:
             / self.starting_balance
         ) * 100
 
-        print(
-            "\n" + "=" * 65,
-            flush=True
-        )
-
-        print(
-            "📊 PAPER TRADING STATISTIK",
-            flush=True
-        )
-
-        print(
-            "=" * 65,
-            flush=True
-        )
+        print("\n" + "=" * 65, flush=True)
+        print("📊 PAPER TRADING STATISTIK", flush=True)
+        print("=" * 65, flush=True)
 
         print(
             f"Scans:              {self.scans}",
@@ -243,88 +231,60 @@ class PaperTrader:
         print("-" * 65, flush=True)
 
         print(
-            f"Startkapital:       "
-            f"${self.starting_balance:,.2f}",
+            f"Startkapital:       ${self.starting_balance:,.2f}",
             flush=True
         )
 
         print(
-            f"Aktuelles Kapital:  "
-            f"${self.balance:,.2f}",
+            f"Aktuelles Kapital:  ${self.balance:,.2f}",
             flush=True
         )
 
         print(
-            f"Gesamtgewinn:       "
-            f"${self.total_profit:,.4f}",
+            f"Gesamtgewinn:       ${self.total_profit:,.4f}",
             flush=True
         )
 
         print(
-            f"Rendite:            "
-            f"{return_percent:.4f}%",
+            f"Rendite:            {return_percent:.4f}%",
             flush=True
         )
 
         if self.best_trade:
-
+            print("\n🏆 BESTER PAPER TRADE", flush=True)
             print(
-                "\n🏆 BESTER PAPER TRADE",
+                f"Gewinn:             ${self.best_trade['profit']:,.4f}",
                 flush=True
             )
-
             print(
-                f"Gewinn:             "
-                f"${self.best_trade['profit']:,.4f}",
+                f"Netto:              {self.best_trade['profit_percent']:.4f}%",
                 flush=True
             )
-
             print(
-                f"Netto:              "
-                f"{self.best_trade['profit_percent']:.4f}%",
+                f"BUY:                {self.best_trade['buy_exchange'].upper()}",
                 flush=True
             )
-
             print(
-                f"BUY:                "
-                f"{self.best_trade['buy_exchange'].upper()}",
-                flush=True
-            )
-
-            print(
-                f"SELL:               "
-                f"{self.best_trade['sell_exchange'].upper()}",
+                f"SELL:               {self.best_trade['sell_exchange'].upper()}",
                 flush=True
             )
 
         if self.worst_trade:
-
+            print("\n📉 SCHLECHTESTER PAPER TRADE", flush=True)
             print(
-                "\n📉 SCHLECHTESTER PAPER TRADE",
+                f"Gewinn:             ${self.worst_trade['profit']:,.4f}",
                 flush=True
             )
-
             print(
-                f"Gewinn:             "
-                f"${self.worst_trade['profit']:,.4f}",
+                f"Netto:              {self.worst_trade['profit_percent']:.4f}%",
                 flush=True
             )
-
             print(
-                f"Netto:              "
-                f"{self.worst_trade['profit_percent']:.4f}%",
+                f"BUY:                {self.worst_trade['buy_exchange'].upper()}",
                 flush=True
             )
-
             print(
-                f"BUY:                "
-                f"{self.worst_trade['buy_exchange'].upper()}",
-                flush=True
-            )
-
-            print(
-                f"SELL:               "
-                f"{self.worst_trade['sell_exchange'].upper()}",
+                f"SELL:               {self.worst_trade['sell_exchange'].upper()}",
                 flush=True
             )
 
