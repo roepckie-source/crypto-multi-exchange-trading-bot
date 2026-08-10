@@ -13,8 +13,6 @@ EXCHANGES = {
 }
 
 
-# Geschätzte Spot-Handelsgebühren.
-# Diese Werte sind zunächst nur Näherungswerte.
 TRADING_FEES = {
     "binance": 0.0010,
     "bybit": 0.0010,
@@ -27,9 +25,8 @@ TRADING_FEES = {
 }
 
 
-# Sicherheitsannahme für die Slippage.
-# Später ersetzen wir diese durch echte Orderbuchdaten.
-ESTIMATED_SLIPPAGE = 0.0005
+# Virtuelle Tradegröße
+TRADE_SIZE_USDT = 1000.0
 
 
 def get_btc_prices():
@@ -40,7 +37,9 @@ def get_btc_prices():
 
         try:
 
-            ticker = exchange.fetch_ticker("BTC/USDT")
+            ticker = exchange.fetch_ticker(
+                "BTC/USDT"
+            )
 
             bid = ticker.get("bid")
             ask = ticker.get("ask")
@@ -67,12 +66,168 @@ def get_btc_prices():
     return prices
 
 
+def get_orderbook(exchange, limit=20):
+
+    try:
+
+        return exchange.fetch_order_book(
+            "BTC/USDT",
+            limit
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Orderbuch-Fehler: {e}"
+        )
+
+        return None
+
+
+def calculate_average_buy_price(
+    asks,
+    usdt_amount
+):
+
+    remaining_usdt = usdt_amount
+    btc_amount = 0.0
+    total_cost = 0.0
+
+    for price, quantity in asks:
+
+        if price <= 0 or quantity <= 0:
+            continue
+
+        available_usdt = (
+            price * quantity
+        )
+
+        amount_to_use = min(
+            remaining_usdt,
+            available_usdt
+        )
+
+        btc_bought = (
+            amount_to_use / price
+        )
+
+        btc_amount += btc_bought
+        total_cost += amount_to_use
+
+        remaining_usdt -= amount_to_use
+
+        if remaining_usdt <= 0:
+            break
+
+    if btc_amount <= 0:
+        return None
+
+    if remaining_usdt > 0:
+        return None
+
+    return total_cost / btc_amount
+
+
+def calculate_average_sell_price(
+    bids,
+    btc_amount
+):
+
+    remaining_btc = btc_amount
+    total_revenue = 0.0
+
+    for price, quantity in bids:
+
+        if price <= 0 or quantity <= 0:
+            continue
+
+        amount_to_sell = min(
+            remaining_btc,
+            quantity
+        )
+
+        total_revenue += (
+            amount_to_sell * price
+        )
+
+        remaining_btc -= amount_to_sell
+
+        if remaining_btc <= 0:
+            break
+
+    if remaining_btc > 0:
+        return None
+
+    return (
+        total_revenue
+        / btc_amount
+    )
+
+
 def calculate_net_arbitrage(
     buy_exchange,
-    buy_price,
-    sell_exchange,
-    sell_price
+    sell_exchange
 ):
+
+    buy_market = EXCHANGES[
+        buy_exchange
+    ]
+
+    sell_market = EXCHANGES[
+        sell_exchange
+    ]
+
+    buy_orderbook = get_orderbook(
+        buy_market
+    )
+
+    sell_orderbook = get_orderbook(
+        sell_market
+    )
+
+    if not buy_orderbook:
+        return None
+
+    if not sell_orderbook:
+        return None
+
+    asks = buy_orderbook.get(
+        "asks",
+        []
+    )
+
+    bids = sell_orderbook.get(
+        "bids",
+        []
+    )
+
+    if not asks or not bids:
+        return None
+
+    average_buy_price = (
+        calculate_average_buy_price(
+            asks,
+            TRADE_SIZE_USDT
+        )
+    )
+
+    if average_buy_price is None:
+        return None
+
+    btc_amount = (
+        TRADE_SIZE_USDT
+        / average_buy_price
+    )
+
+    average_sell_price = (
+        calculate_average_sell_price(
+            bids,
+            btc_amount
+        )
+    )
+
+    if average_sell_price is None:
+        return None
 
     buy_fee = TRADING_FEES.get(
         buy_exchange,
@@ -84,43 +239,58 @@ def calculate_net_arbitrage(
         0.001
     )
 
-    # Effektiver Einkaufspreis
-    effective_buy_price = (
-        buy_price
-        * (
-            1
-            + buy_fee
-            + ESTIMATED_SLIPPAGE
-        )
+    buy_cost = (
+        TRADE_SIZE_USDT
+        * (1 + buy_fee)
     )
 
-    # Effektiver Verkaufspreis
-    effective_sell_price = (
-        sell_price
-        * (
-            1
-            - sell_fee
-            - ESTIMATED_SLIPPAGE
-        )
+    sell_revenue = (
+        btc_amount
+        * average_sell_price
+        * (1 - sell_fee)
     )
 
     net_profit = (
-        effective_sell_price
-        - effective_buy_price
+        sell_revenue
+        - buy_cost
     )
 
     net_profit_percent = (
         net_profit
-        / effective_buy_price
+        / buy_cost
     ) * 100
 
     return {
-        "buy_fee": buy_fee,
-        "sell_fee": sell_fee,
-        "effective_buy_price": effective_buy_price,
-        "effective_sell_price": effective_sell_price,
-        "net_profit": net_profit,
-        "net_profit_percent": net_profit_percent,
+
+        "buy_exchange":
+            buy_exchange,
+
+        "sell_exchange":
+            sell_exchange,
+
+        "buy_price":
+            average_buy_price,
+
+        "sell_price":
+            average_sell_price,
+
+        "buy_fee":
+            buy_fee,
+
+        "sell_fee":
+            sell_fee,
+
+        "trade_size":
+            TRADE_SIZE_USDT,
+
+        "btc_amount":
+            btc_amount,
+
+        "net_profit":
+            net_profit,
+
+        "net_profit_percent":
+            net_profit_percent,
     }
 
 
@@ -140,6 +310,10 @@ def find_best_opportunity(prices):
         prices.keys()
     )
 
+    print(
+        "\n🔎 Analysiere Orderbücher..."
+    )
+
     for buy_exchange in exchanges:
 
         for sell_exchange in exchanges:
@@ -147,75 +321,42 @@ def find_best_opportunity(prices):
             if buy_exchange == sell_exchange:
                 continue
 
-            buy_price = prices[
-                buy_exchange
-            ]["ask"]
+            try:
 
-            sell_price = prices[
-                sell_exchange
-            ]["bid"]
+                result = calculate_net_arbitrage(
+                    buy_exchange,
+                    sell_exchange
+                )
 
-            gross_spread = (
-                sell_price
-                - buy_price
-            )
+                if result is None:
+                    continue
 
-            if gross_spread <= 0:
-                continue
+                if (
+                    best_result is None
+                    or result[
+                        "net_profit_percent"
+                    ]
+                    > best_result[
+                        "net_profit_percent"
+                    ]
+                ):
 
-            gross_spread_percent = (
-                gross_spread
-                / buy_price
-            ) * 100
+                    best_result = result
 
-            result = calculate_net_arbitrage(
-                buy_exchange,
-                buy_price,
-                sell_exchange,
-                sell_price
-            )
+            except Exception as e:
 
-            result["buy_exchange"] = (
-                buy_exchange
-            )
-
-            result["sell_exchange"] = (
-                sell_exchange
-            )
-
-            result["buy_price"] = (
-                buy_price
-            )
-
-            result["sell_price"] = (
-                sell_price
-            )
-
-            result["gross_spread"] = (
-                gross_spread
-            )
-
-            result["gross_spread_percent"] = (
-                gross_spread_percent
-            )
-
-            if (
-                best_result is None
-                or result[
-                    "net_profit_percent"
-                ]
-                > best_result[
-                    "net_profit_percent"
-                ]
-            ):
-
-                best_result = result
+                print(
+                    f"⚠️ "
+                    f"{buy_exchange} → "
+                    f"{sell_exchange}: "
+                    f"{e}"
+                )
 
     if best_result is None:
 
         print(
-            "\n❌ Keine positive "
-            "Brutto-Arbitrage gefunden."
+            "\n❌ Keine auswertbare "
+            "Arbitrage gefunden."
         )
 
         return None
@@ -226,7 +367,7 @@ def find_best_opportunity(prices):
     )
 
     print(
-        "🧠 BTC NET ARBITRAGE ANALYSIS"
+        "🧠 BTC REAL ORDERBOOK ANALYSIS"
     )
 
     print(
@@ -239,7 +380,7 @@ def find_best_opportunity(prices):
     )
 
     print(
-        f"Kaufpreis:    "
+        f"Ø Kaufpreis:  "
         f"${best_result['buy_price']:,.2f}"
     )
 
@@ -249,13 +390,18 @@ def find_best_opportunity(prices):
     )
 
     print(
-        f"Verkaufspreis:"
-        f" ${best_result['sell_price']:,.2f}"
+        f"Ø Verkauf:    "
+        f"${best_result['sell_price']:,.2f}"
     )
 
     print(
-        f"\nBrutto-Spread: "
-        f"{best_result['gross_spread_percent']:.4f}%"
+        f"\nBTC-Menge:    "
+        f"{best_result['btc_amount']:.8f}"
+    )
+
+    print(
+        f"Tradegröße:   "
+        f"${best_result['trade_size']:,.2f}"
     )
 
     print(
@@ -269,23 +415,8 @@ def find_best_opportunity(prices):
     )
 
     print(
-        f"Slippage:     "
-        f"{ESTIMATED_SLIPPAGE * 100:.3f}% je Seite"
-    )
-
-    print(
-        f"\nEffektiver Kauf:"
-        f" ${best_result['effective_buy_price']:,.2f}"
-    )
-
-    print(
-        f"Effektiver Verkauf:"
-        f" ${best_result['effective_sell_price']:,.2f}"
-    )
-
-    print(
         f"\nNETTO-GEWINN: "
-        f"${best_result['net_profit']:.2f}"
+        f"${best_result['net_profit']:.4f}"
     )
 
     print(
@@ -312,9 +443,6 @@ def find_best_opportunity(prices):
         "=" * 65
     )
 
-    # Wichtig:
-    # Das Ergebnis wird an den
-    # Paper-Trader zurückgegeben.
     return best_result
 
 
