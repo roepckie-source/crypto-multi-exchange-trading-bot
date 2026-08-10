@@ -1,4 +1,9 @@
+import json
+import os
 from datetime import datetime
+
+
+STATE_FILE = "paper_state.json"
 
 
 class PaperTrader:
@@ -10,51 +15,107 @@ class PaperTrader:
         min_profit_percent=0.10
     ):
 
-        self.balance = (
-            starting_balance
-        )
+        self.starting_balance = starting_balance
+        self.trade_size = trade_size
+        self.min_profit_percent = min_profit_percent
 
-        self.starting_balance = (
-            starting_balance
-        )
-
-        self.trade_size = (
-            trade_size
-        )
-
-        self.min_profit_percent = (
-            min_profit_percent
-        )
-
-        self.trades = 0
-
-        self.profitable_trades = 0
-
+        self.balance = starting_balance
         self.total_profit = 0.0
+        self.total_trades = 0
+        self.profitable_trades = 0
+        self.rejected_trades = 0
+        self.history = []
 
-    def evaluate_trade(
-        self,
-        opportunity
-    ):
+        self.load_state()
+
+    def load_state(self):
+
+        if not os.path.exists(STATE_FILE):
+            return
+
+        try:
+            with open(
+                STATE_FILE,
+                "r",
+                encoding="utf-8"
+            ) as file:
+
+                state = json.load(file)
+
+            self.balance = state.get(
+                "balance",
+                self.starting_balance
+            )
+
+            self.total_profit = state.get(
+                "total_profit",
+                0.0
+            )
+
+            self.total_trades = state.get(
+                "total_trades",
+                0
+            )
+
+            self.profitable_trades = state.get(
+                "profitable_trades",
+                0
+            )
+
+            self.rejected_trades = state.get(
+                "rejected_trades",
+                0
+            )
+
+            self.history = state.get(
+                "history",
+                []
+            )
+
+            print(
+                f"💾 Paper-Trading-Status geladen: "
+                f"${self.balance:,.2f}"
+            )
+
+        except Exception as e:
+
+            print(
+                f"⚠️ State konnte nicht geladen werden: {e}"
+            )
+
+    def save_state(self):
+
+        state = {
+            "balance": self.balance,
+            "starting_balance": self.starting_balance,
+            "total_profit": self.total_profit,
+            "total_trades": self.total_trades,
+            "profitable_trades": self.profitable_trades,
+            "rejected_trades": self.rejected_trades,
+            "history": self.history[-1000:]
+        }
+
+        with open(
+            STATE_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                state,
+                file,
+                indent=2
+            )
+
+    def evaluate_trade(self, opportunity):
 
         net_profit_percent = (
-            opportunity[
-                "net_profit_percent"
-            ]
+            opportunity["net_profit_percent"]
         )
 
-        print(
-            "\n"
-            + "=" * 65
-        )
-
-        print(
-            "🤖 PAPER TRADING ENGINE"
-        )
-
-        print(
-            "=" * 65
-        )
+        print("\n" + "=" * 65)
+        print("🤖 PAPER TRADING ENGINE")
+        print("=" * 65)
 
         print(
             f"Virtuelles Kapital: "
@@ -67,22 +128,14 @@ class PaperTrader:
         )
 
         print(
-            f"Mindestgewinn: "
-            f"{self.min_profit_percent:.3f}%"
-        )
-
-        print(
-            f"\nBerechneter Nettoertrag: "
+            f"Netto-Chance: "
             f"{net_profit_percent:.4f}%"
         )
 
-        # Kein Trade unterhalb
-        # unserer Mindestprofitabilität.
+        if net_profit_percent < self.min_profit_percent:
 
-        if (
-            net_profit_percent
-            < self.min_profit_percent
-        ):
+            self.rejected_trades += 1
+            self.save_state()
 
             print(
                 "\n🔴 PAPER TRADE ABGELEHNT"
@@ -95,6 +148,19 @@ class PaperTrader:
 
             return False
 
+        if self.balance < self.trade_size:
+
+            print(
+                "\n🔴 PAPER TRADE ABGELEHNT"
+            )
+
+            print(
+                "Grund: Virtuelles Kapital "
+                "nicht ausreichend"
+            )
+
+            return False
+
         profit = (
             self.trade_size
             * net_profit_percent
@@ -102,12 +168,35 @@ class PaperTrader:
         )
 
         self.balance += profit
-
         self.total_profit += profit
 
-        self.trades += 1
-
+        self.total_trades += 1
         self.profitable_trades += 1
+
+        trade = {
+            "time": datetime.utcnow().isoformat(),
+            "buy_exchange": (
+                opportunity["buy_exchange"]
+            ),
+            "sell_exchange": (
+                opportunity["sell_exchange"]
+            ),
+            "buy_price": (
+                opportunity["buy_price"]
+            ),
+            "sell_price": (
+                opportunity["sell_price"]
+            ),
+            "net_profit_percent": (
+                net_profit_percent
+            ),
+            "profit": profit,
+            "balance_after": self.balance
+        }
+
+        self.history.append(trade)
+
+        self.save_state()
 
         print(
             "\n🟢 PAPER TRADE AUSGEFÜHRT"
@@ -124,8 +213,8 @@ class PaperTrader:
         )
 
         print(
-            f"Tradegröße: "
-            f"${self.trade_size:,.2f}"
+            f"Netto: "
+            f"{net_profit_percent:.4f}%"
         )
 
         print(
@@ -138,59 +227,63 @@ class PaperTrader:
             f"${self.balance:,.2f}"
         )
 
-        print(
-            "=" * 65
-        )
+        print("=" * 65)
 
         return True
 
     def print_statistics(self):
 
-        print(
-            "\n📊 PAPER TRADING STATISTIK"
-        )
+        print("\n📊 PAPER TRADING STATISTIK")
+        print("=" * 65)
+
+        profit_percent = (
+            (
+                self.balance
+                - self.starting_balance
+            )
+            / self.starting_balance
+        ) * 100
 
         print(
-            "=" * 65
-        )
-
-        print(
-            f"Startkapital: "
+            f"Startkapital:       "
             f"${self.starting_balance:,.2f}"
         )
 
         print(
-            f"Aktuelles Kapital: "
+            f"Aktuelles Kapital:  "
             f"${self.balance:,.2f}"
         )
 
         print(
-            f"Gesamtgewinn: "
+            f"Gesamtgewinn:       "
             f"${self.total_profit:,.2f}"
         )
 
         print(
-            f"Trades: "
-            f"{self.trades}"
+            f"Rendite:            "
+            f"{profit_percent:.4f}%"
         )
 
-        if self.trades > 0:
+        print(
+            f"Ausgeführte Trades: "
+            f"{self.total_trades}"
+        )
+
+        print(
+            f"Abgelehnte Chancen: "
+            f"{self.rejected_trades}"
+        )
+
+        if self.total_trades > 0:
 
             win_rate = (
                 self.profitable_trades
-                / self.trades
+                / self.total_trades
             ) * 100
 
             print(
-                f"Profit Rate: "
+                f"Trefferquote:       "
                 f"{win_rate:.2f}%"
             )
 
-        print(
-            f"Zeit: "
-            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-
-        print(
-            "=" * 65
-        )
+        print("=" * 65)
