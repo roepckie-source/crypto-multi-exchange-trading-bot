@@ -1,7 +1,4 @@
-def main():
-    print("🚀 Crypto Multi-Exchange Trading Bot startet...")
-    print("📊 Modus: Paper Trading")
-    print("🪙 Asset: BTC")
+from market_scanner import main
 
 
 if __name__ == "__main__":
