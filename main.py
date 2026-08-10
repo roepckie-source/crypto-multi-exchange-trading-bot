@@ -1,194 +1,109 @@
-```python
 import time
 from datetime import datetime
 
 from market_scanner import get_btc_prices, find_best_opportunity
 from paper_trader import PaperTrader
 
-
 SCAN_INTERVAL = 30
-
 
 print("🚀 MAIN.PY WURDE GESTARTET", flush=True)
 
-
 def main():
+print("\n" + "=" * 65, flush=True)
+print("🚀 CRYPTO MULTI-EXCHANGE TRADING BOT", flush=True)
+print("📊 BTC REAL ORDERBOOK ARBITRAGE", flush=True)
+print("🤖 PAPER TRADING MODE", flush=True)
+print("=" * 65, flush=True)
 
-    print("\n" + "=" * 65, flush=True)
-    print("🚀 CRYPTO MULTI-EXCHANGE TRADING BOT", flush=True)
-    print("📊 BTC REAL ORDERBOOK ARBITRAGE", flush=True)
-    print("🤖 PAPER TRADING MODE", flush=True)
-    print("=" * 65, flush=True)
+```
+trader = PaperTrader(
+    starting_balance=10000.0,
+    trade_size=1000.0,
+    min_profit_percent=0.10
+)
 
-    trader = PaperTrader(
-        starting_balance=10000.0,
-        trade_size=1000.0,
-        min_profit_percent=0.10
-    )
+print(f"\n💰 Virtuelles Startkapital: ${trader.starting_balance:,.2f}", flush=True)
+print(f"💵 Tradegröße: ${trader.trade_size:,.2f}", flush=True)
+print(f"🎯 Mindest-Netto-Gewinn: {trader.min_profit_percent:.2f}%", flush=True)
+print(f"⏱️ Scan-Intervall: {SCAN_INTERVAL} Sekunden", flush=True)
+print("\n🧪 PAPER TRADING – KEIN ECHTGELD", flush=True)
 
-    print(
-        f"\n💰 Virtuelles Startkapital: ${trader.starting_balance:,.2f}",
-        flush=True
-    )
+try:
+    while True:
+        print("\n" + "=" * 65, flush=True)
+        print("🔎 NEUER MARKT-SCAN", flush=True)
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), flush=True)
+        print("=" * 65, flush=True)
 
-    print(
-        f"💵 Tradegröße: ${trader.trade_size:,.2f}",
-        flush=True
-    )
+        print("\n🔎 STARTE PREISABFRAGE", flush=True)
 
-    print(
-        f"🎯 Mindest-Netto-Gewinn: {trader.min_profit_percent:.2f}%",
-        flush=True
-    )
+        prices = get_btc_prices()
 
-    print(
-        f"⏱️ Scan-Intervall: {SCAN_INTERVAL} Sekunden",
-        flush=True
-    )
+        print(
+            f"\n✅ PREISE ERHALTEN: {len(prices)} BÖRSEN",
+            flush=True
+        )
 
-    print(
-        "\n🧪 PAPER TRADING – KEIN ECHTGELD",
-        flush=True
-    )
+        if not prices:
+            print("❌ KEINE PREISE ERHALTEN", flush=True)
+            time.sleep(SCAN_INTERVAL)
+            continue
 
-    try:
+        print("\n🧠 STARTE ORDERBOOK-ANALYSE", flush=True)
 
-        while True:
+        opportunity = find_best_opportunity(prices)
 
-            print("\n" + "=" * 65, flush=True)
+        print("\n✅ ANALYSE ZURÜCKGEKEHRT", flush=True)
+        print(
+            f"Opportunity vorhanden: {opportunity is not None}",
+            flush=True
+        )
 
-            print(
-                "🔎 NEUER MARKT-SCAN",
-                flush=True
-            )
-
-            print(
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                flush=True
-            )
-
-            print("=" * 65, flush=True)
-
-            # Preise abrufen
-            print(
-                "\n🔎 STARTE PREISABFRAGE",
-                flush=True
-            )
-
-            prices = get_btc_prices()
-
-            print(
-                f"\n✅ PREISE ERHALTEN: {len(prices)} BÖRSEN",
-                flush=True
-            )
-
-            if not prices:
-
-                print(
-                    "❌ KEINE PREISE ERHALTEN",
-                    flush=True
-                )
-
-                time.sleep(SCAN_INTERVAL)
-                continue
-
-            # Orderbuch analysieren
-            print(
-                "\n🧠 STARTE ORDERBOOK-ANALYSE",
-                flush=True
-            )
-
-            opportunity = find_best_opportunity(prices)
-
-            print(
-                "\n✅ ANALYSE ZURÜCKGEKEHRT",
-                flush=True
-            )
-
-            print(
-                f"Opportunity vorhanden: {opportunity is not None}",
-                flush=True
-            )
-
-            # Paper Trading
-            if opportunity:
-
-                print(
-                    "\n🤖 ÜBERGABE AN PAPER TRADER",
-                    flush=True
-                )
-
-                try:
-
-                    trader.evaluate_trade(
-                        opportunity
-                    )
-
-                except Exception as e:
-
-                    print(
-                        f"❌ PAPER-TRADER FEHLER: "
-                        f"{type(e).__name__}: {e}",
-                        flush=True
-                    )
-
-            else:
-
-                print(
-                    "\n⚪ KEINE ARBITRAGE-CHANCE",
-                    flush=True
-                )
-
-            # Statistik
-            print(
-                "\n📊 AKTUELLE PAPER-TRADING-STATISTIK",
-                flush=True
-            )
+        if opportunity:
+            print("\n🤖 ÜBERGABE AN PAPER TRADER", flush=True)
 
             try:
-
-                trader.print_statistics()
+                trader.evaluate_trade(opportunity)
 
             except Exception as e:
-
                 print(
-                    f"❌ STATISTIK-FEHLER: "
-                    f"{type(e).__name__}: {e}",
+                    f"❌ PAPER-TRADER FEHLER: {type(e).__name__}: {e}",
                     flush=True
                 )
 
-            # Warten
+        else:
+            print("\n⚪ KEINE ARBITRAGE-CHANCE", flush=True)
+
+        print(
+            "\n📊 AKTUELLE PAPER-TRADING-STATISTIK",
+            flush=True
+        )
+
+        try:
+            trader.print_statistics()
+
+        except Exception as e:
             print(
-                f"\n⏳ Nächster Scan in {SCAN_INTERVAL} Sekunden...",
+                f"❌ STATISTIK-FEHLER: {type(e).__name__}: {e}",
                 flush=True
             )
 
-            time.sleep(SCAN_INTERVAL)
-
-    except KeyboardInterrupt:
-
         print(
-            "\n🛑 PAPER TRADING MANUELL BEENDET",
+            f"\n⏳ Nächster Scan in {SCAN_INTERVAL} Sekunden...",
             flush=True
         )
 
-        trader.print_statistics()
+        time.sleep(SCAN_INTERVAL)
 
-    except Exception as e:
+except KeyboardInterrupt:
+    print("\n🛑 PAPER TRADING MANUELL BEENDET", flush=True)
+    trader.print_statistics()
 
-        print(
-            "\n❌ UNERWARTETER HAUPTFEHLER",
-            flush=True
-        )
-
-        print(
-            f"{type(e).__name__}: {e}",
-            flush=True
-        )
-
-        raise
-
-
-if __name__ == "__main__":
-    main()
+except Exception as e:
+    print("\n❌ UNERWARTETER HAUPTFEHLER", flush=True)
+    print(f"{type(e).__name__}: {e}", flush=True)
+    raise
 ```
+
+if **name** == "**main**":
+main()
