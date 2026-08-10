@@ -1,13 +1,17 @@
-name: BTC Multi-Exchange Scanner
+name: BTC Multi-Exchange Paper Trader
 
 on:
   workflow_dispatch:
 
 jobs:
-  scanner:
+  paper-trader:
+
     runs-on: ubuntu-latest
 
+    timeout-minutes: 60
+
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -21,6 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run scanner
+      - name: Start Paper Trader
         run: |
           python main.py
