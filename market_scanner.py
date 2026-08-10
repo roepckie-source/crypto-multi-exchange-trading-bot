@@ -482,4 +482,3 @@ print(
 )
 
 return best
-```
