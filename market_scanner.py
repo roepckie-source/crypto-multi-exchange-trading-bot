@@ -53,41 +53,36 @@ MIN_PROFIT_PERCENT = 0.10
 
 def get_btc_prices():
 
-```
-prices = {}
+    prices = {}
 
-for name, exchange in EXCHANGES.items():
+    for name, exchange in EXCHANGES.items():
 
-    try:
+        try:
+            ticker = exchange.fetch_ticker("BTC/USDT")
 
-        ticker = exchange.fetch_ticker("BTC/USDT")
+            bid = ticker.get("bid")
+            ask = ticker.get("ask")
 
-        bid = ticker.get("bid")
-        ask = ticker.get("ask")
+            if bid and ask:
+                prices[name] = {
+                    "bid": float(bid),
+                    "ask": float(ask),
+                }
 
-        if bid and ask:
+                print(
+                    f"{name.upper():10} "
+                    f"BUY: ${ask:,.2f} | "
+                    f"SELL: ${bid:,.2f}",
+                    flush=True
+                )
 
-            prices[name] = {
-                "bid": float(bid),
-                "ask": float(ask),
-            }
-
+        except Exception as e:
             print(
-                f"{name.upper():10} "
-                f"BUY: ${ask:,.2f} | "
-                f"SELL: ${bid:,.2f}",
+                f"⚠️ {name.upper()}: {e}",
                 flush=True
             )
 
-    except Exception as e:
-
-        print(
-            f"⚠️ {name.upper()}: {e}",
-            flush=True
-        )
-
-return prices
-```
+    return prices
 
 def load_orderbooks(exchanges):
 
