@@ -2,7 +2,7 @@ import time
 
 from market_scanner import (
     get_btc_prices,
-    find_best_opportunity
+    find_best_opportunity,
 )
 
 from paper_trader import PaperTrader
@@ -15,12 +15,11 @@ def main():
 
     print("🚀 START BTC SCANNER", flush=True)
     print("🤖 PAPER TRADING AKTIV", flush=True)
-    print("⏱️ SCAN-INTERVALL: 30 SEKUNDEN", flush=True)
 
     trader = PaperTrader(
         starting_balance=10000.0,
         trade_size=1000.0,
-        min_profit_percent=0.10
+        min_profit_percent=0.10,
     )
 
     while True:
@@ -35,29 +34,29 @@ def main():
 
             print(
                 "📡 Rufe Börsenkurse ab...",
-                flush=True
+                flush=True,
             )
 
             prices = get_btc_prices()
+
+            print(
+                f"✅ PREISE ERHALTEN: "
+                f"{len(prices)} Börsen",
+                flush=True,
+            )
 
             if not prices:
 
                 print(
                     "❌ KEINE PREISE ERHALTEN",
-                    flush=True
+                    flush=True,
                 )
 
             else:
 
                 print(
-                    f"✅ PREISE ERHALTEN: "
-                    f"{len(prices)} BÖRSEN",
-                    flush=True
-                )
-
-                print(
                     "\n🧠 STARTE ORDERBOOK-ANALYSE",
-                    flush=True
+                    flush=True,
                 )
 
                 opportunity = find_best_opportunity(
@@ -68,12 +67,12 @@ def main():
 
                     print(
                         "\n📊 OPPORTUNITY",
-                        flush=True
+                        flush=True,
                     )
 
                     print(
                         opportunity,
-                        flush=True
+                        flush=True,
                     )
 
                     trader.evaluate_trade(
@@ -84,37 +83,44 @@ def main():
 
                     print(
                         "\n⚪ KEINE OPPORTUNITY",
-                        flush=True
+                        flush=True,
                     )
 
         except Exception as e:
 
             print(
                 "\n❌ FEHLER IM SCAN",
-                flush=True
+                flush=True,
             )
 
             print(
                 f"{type(e).__name__}: {e}",
-                flush=True
+                flush=True,
             )
 
         print(
             "\n📊 PAPER TRADING STATISTIK",
-            flush=True
+            flush=True,
         )
 
-        trader.print_statistics()
+        try:
+
+            trader.print_statistics()
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Statistik-Fehler: {e}",
+                flush=True,
+            )
 
         print(
             f"\n⏳ Nächster Scan in "
             f"{SCAN_INTERVAL} Sekunden...",
-            flush=True
+            flush=True,
         )
 
-        time.sleep(
-            SCAN_INTERVAL
-        )
+        time.sleep(SCAN_INTERVAL)
 
 
 if __name__ == "__main__":
