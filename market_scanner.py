@@ -155,6 +155,8 @@ def find_best_opportunity(prices):
     print("🧠 BTC NET ARBITRAGE ANALYSIS")
     print("=" * 65)
 
+    return best_result
+
     print(
         f"Kaufen:       "
         f"{best_result['buy_exchange'].upper()}"
