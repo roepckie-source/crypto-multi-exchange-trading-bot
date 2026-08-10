@@ -1,169 +1,118 @@
 import time
 
 from market_scanner import (
-    get_btc_prices,
-    find_best_opportunity
+get_btc_prices,
+find_best_opportunity
 )
 
 from paper_trader import PaperTrader
 
-
 SCAN_INTERVAL = 30
-
 
 def main():
 
-    print("🚀 START BTC SCANNER", flush=True)
-    print("🤖 PAPER TRADING AKTIV", flush=True)
+```
+print("🚀 START BTC SCANNER", flush=True)
+print("🤖 PAPER TRADING AKTIV", flush=True)
 
-    trader = PaperTrader(
-        starting_balance=10000.0,
-        trade_size=1000.0,
-        min_profit_percent=0.10
-    )
+trader = PaperTrader(
+    starting_balance=10000.0,
+    trade_size=1000.0,
+    min_profit_percent=0.10
+)
 
-    while True:
+while True:
 
-        print("\n" + "=" * 65, flush=True)
-        print("🔎 NEUER SCAN", flush=True)
-        print("=" * 65, flush=True)
+    print("\n" + "=" * 65, flush=True)
+    print("🔎 NEUER SCAN", flush=True)
+    print("=" * 65, flush=True)
 
-        trader.register_scan()
+    try:
 
-        try:
+        print("📡 Rufe Börsenkurse ab...", flush=True)
 
-            # --------------------------------------------------
-            # PREISE ABFRAGEN
-            # --------------------------------------------------
+        prices = get_btc_prices()
+
+        print(
+            f"✅ PREISE ERHALTEN: {len(prices)} Börsen",
+            flush=True
+        )
+
+        if not prices:
 
             print(
-                "📡 Rufe get_btc_prices() auf...",
+                "❌ KEINE PREISE ERHALTEN",
                 flush=True
             )
 
-            prices = get_btc_prices()
+        else:
 
             print(
-                f"✅ get_btc_prices() beendet: "
-                f"{len(prices)} Börsen",
+                "\n🧠 STARTE ORDERBOOK-ANALYSE",
                 flush=True
             )
 
-            print(
-                f"📦 Preise: {prices}",
-                flush=True
-            )
+            opportunity = find_best_opportunity(prices)
 
-            if not prices:
+            if opportunity:
 
                 print(
-                    "❌ KEINE PREISE ERHALTEN",
+                    "\n📊 OPPORTUNITY",
                     flush=True
+                )
+
+                print(
+                    opportunity,
+                    flush=True
+                )
+
+                trader.evaluate_trade(
+                    opportunity
                 )
 
             else:
 
                 print(
-                    "\n✅ PREISE ERHALTEN",
+                    "\n⚪ KEINE OPPORTUNITY",
                     flush=True
                 )
 
-                # --------------------------------------------------
-                # ORDERBOOK-ANALYSE
-                # --------------------------------------------------
-
-                print(
-                    "\n🧠 Starte echte Orderbuch-Analyse...",
-                    flush=True
-                )
-
-                opportunity = find_best_opportunity(
-                    prices
-                )
-
-                print(
-                    "\n✅ Orderbuch-Analyse beendet",
-                    flush=True
-                )
-
-                # --------------------------------------------------
-                # OPPORTUNITY
-                # --------------------------------------------------
-
-                if opportunity:
-
-                    print(
-                        "\n📊 OPPORTUNITY",
-                        flush=True
-                    )
-
-                    print(
-                        opportunity,
-                        flush=True
-                    )
-
-                    # --------------------------------------------------
-                    # PAPER TRADING
-                    # --------------------------------------------------
-
-                    print(
-                        "\n🤖 Übergabe an Paper Trader...",
-                        flush=True
-                    )
-
-                    trader.evaluate_trade(
-                        opportunity
-                    )
-
-                else:
-
-                    print(
-                        "\n⚪ KEINE AUSWERTBARE OPPORTUNITY",
-                        flush=True
-                    )
-
-        except Exception as e:
-
-            print(
-                "\n❌ FEHLER IM SCAN",
-                flush=True
-            )
-
-            print(
-                f"Fehlertyp: {type(e).__name__}",
-                flush=True
-            )
-
-            print(
-                f"Fehlermeldung: {e}",
-                flush=True
-            )
-
-        # --------------------------------------------------
-        # STATISTIK
-        # --------------------------------------------------
+    except Exception as e:
 
         print(
-            "\n📊 PAPER TRADING STATISTIK",
+            "\n❌ FEHLER IM SCAN",
             flush=True
         )
+
+        print(
+            f"{type(e).__name__}: {e}",
+            flush=True
+        )
+
+    print(
+        "\n📊 PAPER TRADING STATISTIK",
+        flush=True
+    )
+
+    try:
 
         trader.print_statistics()
 
-        # --------------------------------------------------
-        # WARTEN
-        # --------------------------------------------------
+    except Exception as e:
 
         print(
-            f"\n⏳ Nächster Scan in "
-            f"{SCAN_INTERVAL} Sekunden...",
+            f"⚠️ Statistik-Fehler: {e}",
             flush=True
         )
 
-        time.sleep(
-            SCAN_INTERVAL
-        )
+    print(
+        f"\n⏳ Nächster Scan in "
+        f"{SCAN_INTERVAL} Sekunden...",
+        flush=True
+    )
 
+    time.sleep(SCAN_INTERVAL)
+```
 
-if __name__ == "__main__":
-    main()
+if **name** == "**main**":
+main()
