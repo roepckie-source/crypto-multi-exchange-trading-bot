@@ -23,12 +23,14 @@ trader = PaperTrader(
 )
 
 print(
-    f"💰 Virtuelles Startkapital: ${trader.starting_balance:,.2f}",
+    f"💰 Virtuelles Startkapital: "
+    f"${trader.starting_balance:,.2f}",
     flush=True
 )
 
 print(
-    f"💵 Tradegröße: ${trader.trade_size:,.2f}",
+    f"💵 Tradegröße: "
+    f"${trader.trade_size:,.2f}",
     flush=True
 )
 
