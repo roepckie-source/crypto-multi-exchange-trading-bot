@@ -1,20 +1,15 @@
 import time
 
-from market_scanner import (
-get_btc_prices,
-find_best_opportunity
-)
-
+from market_scanner import get_btc_prices, find_best_opportunity
 from paper_trader import PaperTrader
 
 SCAN_INTERVAL = 30
 
 def main():
-
-```
 print("🚀 START BTC SCANNER", flush=True)
 print("🤖 PAPER TRADING AKTIV", flush=True)
 
+```
 trader = PaperTrader(
     starting_balance=10000.0,
     trade_size=1000.0,
@@ -22,13 +17,11 @@ trader = PaperTrader(
 )
 
 while True:
-
     print("\n" + "=" * 65, flush=True)
     print("🔎 NEUER SCAN", flush=True)
     print("=" * 65, flush=True)
 
     try:
-
         print("📡 Rufe Börsenkurse ab...", flush=True)
 
         prices = get_btc_prices()
@@ -39,14 +32,9 @@ while True:
         )
 
         if not prices:
-
-            print(
-                "❌ KEINE PREISE ERHALTEN",
-                flush=True
-            )
+            print("❌ KEINE PREISE ERHALTEN", flush=True)
 
         else:
-
             print(
                 "\n🧠 STARTE ORDERBOOK-ANALYSE",
                 flush=True
@@ -55,7 +43,6 @@ while True:
             opportunity = find_best_opportunity(prices)
 
             if opportunity:
-
                 print(
                     "\n📊 OPPORTUNITY",
                     flush=True
@@ -66,19 +53,15 @@ while True:
                     flush=True
                 )
 
-                trader.evaluate_trade(
-                    opportunity
-                )
+                trader.evaluate_trade(opportunity)
 
             else:
-
                 print(
                     "\n⚪ KEINE OPPORTUNITY",
                     flush=True
                 )
 
     except Exception as e:
-
         print(
             "\n❌ FEHLER IM SCAN",
             flush=True
@@ -95,11 +78,9 @@ while True:
     )
 
     try:
-
         trader.print_statistics()
 
     except Exception as e:
-
         print(
             f"⚠️ Statistik-Fehler: {e}",
             flush=True
