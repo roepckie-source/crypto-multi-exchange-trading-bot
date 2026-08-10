@@ -101,10 +101,6 @@ def main():
                 flush=True
             )
 
-            # --------------------------------------------------
-            # 1. PREISE ABRUFEN
-            # --------------------------------------------------
-
             print(
                 "\n🔎 STARTE PREISABFRAGE",
                 flush=True
@@ -131,19 +127,13 @@ def main():
 
                 continue
 
-            # --------------------------------------------------
-            # 2. ARBITRAGE ANALYSIEREN
-            # --------------------------------------------------
-
             print(
                 "\n🧠 STARTE ORDERBOOK-ANALYSE",
                 flush=True
             )
 
-            opportunity = (
-                find_best_opportunity(
-                    prices
-                )
+            opportunity = find_best_opportunity(
+                prices
             )
 
             print(
@@ -156,10 +146,6 @@ def main():
                 f"{opportunity is not None}",
                 flush=True
             )
-
-            # --------------------------------------------------
-            # 3. PAPER TRADING
-            # --------------------------------------------------
 
             if opportunity:
 
@@ -189,10 +175,6 @@ def main():
                     flush=True
                 )
 
-            # --------------------------------------------------
-            # 4. STATISTIK
-            # --------------------------------------------------
-
             print(
                 "\n📊 AKTUELLE PAPER-TRADING-STATISTIK",
                 flush=True
@@ -209,10 +191,6 @@ def main():
                     f"{type(e).__name__}: {e}",
                     flush=True
                 )
-
-            # --------------------------------------------------
-            # 5. WARTEN
-            # --------------------------------------------------
 
             print(
                 f"\n⏳ Nächster Scan in "
