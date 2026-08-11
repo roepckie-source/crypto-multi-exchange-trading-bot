@@ -8,13 +8,15 @@ from paper_trader import PaperTrader
 
 SCAN_INTERVAL = 30
 CSV_FILE = "trading_results.csv"
+MAX_SCANS = 5  # Automatischer Stopp nach 5 Scans für den Artefakt-Download
 
 
 def main():
     print("🚀 BTC MULTI-EXCHANGE PAPER TRADER", flush=True)
     print("🔥 VERSION 2026-08-11", flush=True)
     print("🤖 PAPER TRADING AKTIV", flush=True)
-    print(f"⏱️ SCAN-INTERVALL: {SCAN_INTERVAL} SEKUNDEN\n", flush=True)
+    print(f"⏱️ SCAN-INTERVALL: {SCAN_INTERVAL} SEKUNDEN")
+    print(f"🛑 AUTOMATISCHER STOPP NACH: {MAX_SCANS} SCANS\n", flush=True)
 
     # Initialisiere die Trading-Engine
     trader = PaperTrader(starting_balance=10000.0, min_profit_percent=0.10)
@@ -25,9 +27,11 @@ def main():
             writer = csv.writer(f)
             writer.writerow(["Zeitstempel", "Status", "Kauf_Boerse", "Verkauf_Boerse", "Netto_Prozent", "Profit_USD", "Kapital_Aktuell"])
 
-    while True:
+    # Kontrollierte Zählschleife statt Endlosschleife
+    while trader.scans < MAX_SCANS:
+        aktuelle_runde = trader.scans + 1
         print("\n" + "=" * 65, flush=True)
-        print("🔎 NEUER SCAN", flush=True)
+        print(f"🔎 NEUER SCAN ({aktuelle_runde}/{MAX_SCANS})", flush=True)
         print("=" * 65, flush=True)
         
         trader.register_scan()
@@ -67,8 +71,12 @@ def main():
         except Exception as e:
             print(f"⚠️ STATISTIK-FEHLER: {e}", flush=True)
 
-        print(f"\n⏳ Nächster Scan in {SCAN_INTERVAL} Sekunden...", flush=True)
-        time.sleep(SCAN_INTERVAL)
+        # Beim letzten Scan die Wartezeit überspringen und direkt beenden
+        if trader.scans < MAX_SCANS:
+            print(f"\n⏳ Nächster Scan in {SCAN_INTERVAL} Sekunden...", flush=True)
+            time.sleep(SCAN_INTERVAL)
+
+    print("\n🏁 TESTLAUF BEENDET. Fahre geordnet herunter für Artefakt-Upload...", flush=True)
 
 
 if __name__ == "__main__":
