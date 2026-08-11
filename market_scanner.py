@@ -11,8 +11,8 @@ EXCHANGE = ccxt.bitrue({
 # Da wir 3 Trades im Kreis machen: 3 * 0.00098 = ca. 0.294% Gesamtgebühren
 FEE_PER_TRADE = 0.00098  
 
-# Coins, die stabil genug sind und hohes Volumen auf Bitrue haben
-CANDIDATE_COINS = ["XRP", "SOL", "ADA", "DOGE", "LINK", "LTC", "ETH", "DOT", "MATIC"]
+# Coins, die garantiert ein aktives BTC- und USDT-Paar auf Bitrue besitzen
+CANDIDATE_COINS = ["XRP", "ETH", "LTC"]
 
 def get_btc_prices():
     """
