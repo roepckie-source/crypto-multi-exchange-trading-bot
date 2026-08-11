@@ -70,7 +70,8 @@ def buy_from_orderbook(asks, usdt):
     for level in asks:
         if len(level) < 2: continue
         try:
-            price, quantity = float(level[0]), float(level[1])
+            price = float(level[0])
+            quantity = float(level[1])
         except Exception: continue
         if price <= 0 or quantity <= 0: continue
         
@@ -90,7 +91,8 @@ def sell_to_orderbook(bids, btc):
     for level in bids:
         if len(level) < 2: continue
         try:
-            price, quantity = float(level[0]), float(level[1])
+            price = float(level[0])
+            quantity = float(level[1])
         except Exception: continue
         if price <= 0 or quantity <= 0: continue
         
