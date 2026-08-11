@@ -27,7 +27,7 @@ ORDERBOOK_LIMIT = 20
 
 # 🔥 TESTMODUS: Auf True lassen für garantierte Trades im GitHub-Log.
 # Auf False stellen für ungeschönte, echte Live-Marktergebnisse.
-TEST_MODUS_AKTIV = True
+TEST_MODUS_AKTIV = False
 
 
 def get_btc_prices():
