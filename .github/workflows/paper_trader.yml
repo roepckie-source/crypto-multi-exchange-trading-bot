@@ -1,9 +1,10 @@
-name: Bitrue Paper Trader (DFI)
+name: Bitrue Paper Trader (Intervall-Scan)
 
 on:
-  workflow_dispatch: # Erlaubt manuelles Ausführen im GitHub Actions Tab
+  workflow_dispatch: # Erlaubt manuelles Starten
   schedule:
-    - cron: '0 */6 * * *' # Bspw. alle 6 Stunden automatisch ausführen (optional)
+    # Läuft automatisch alle 30 Minuten (in UTC-Zeit)
+    - cron: '*/30 * * * *'
 
 jobs:
   run-paper-trader:
@@ -24,12 +25,18 @@ jobs:
           pip install ccxt
 
       - name: Paper Trader ausführen
-        run: python paper_trader.py
+        run: python -u main.py
+        env:
+          EXCHANGE_NAME: "bitrue"
+          TRADE_AMOUNT: "10.0"     # 10 EUR/USDT Einsatz
+          MIN_THRESHOLD: "0.01"    # Mindestgewinn 0.01%
+          TOTAL_SCANS: "30"        # 30 Scans pro Intervall (~2-3 Minuten Laufzeit)
 
-      - name: Trading-Ergebnisse als Artefakt hochladen
+      - name: Ergebnisse als Artefakt hochladen
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trading-results-data
+          # Eindeutiger Name pro Durchlauf (verhindert Überschreiben)
+          name: trading-results-${{ github.run_id }}
           path: **/trading_results.csv
-          if-no-files-found: error
+          if-no-files-found: ignore
