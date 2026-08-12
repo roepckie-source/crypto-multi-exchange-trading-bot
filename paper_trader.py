@@ -7,9 +7,9 @@ import urllib.parse
 # ============================================================
 # TELEGRAM KONFIGURATION (Hier deine Daten eintragen)
 # ============================================================
-TELEGRAM_TOKEN = @Turbolaufbot
-TELEGRAM_CHAT_ID = 1986780629
-
+# Ersetze die Punkte unten durch deinen echten langen Token vom BotFather!
+TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQ..." 
+TELEGRAM_CHAT_ID = "1986780629"
 
 class PaperTrader:
     def __init__(self, exchange_name="bitrue", amount=100.0, threshold=0.01, scans=1800):
