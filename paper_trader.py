@@ -1,15 +1,22 @@
 import csv
 import time
+import os
+import urllib.request
+import urllib.parse
 import ccxt
 
 class PaperTrader:
     def __init__(self, amount=10.0, threshold=0.01, scans=50, **kwargs):
         self.amount = amount
         self.min_profit_threshold = threshold
-        self.max_profit_threshold = 5.0      # Maximal realistischer Gewinn (+5 %)
-        self.max_price_ratio = 1.5           # Max. erlaubte Preisabweichung (Faktor 1.5)
+        self.max_profit_threshold = 5.0      # Max. realistischer Gewinn (+5 %)
+        self.max_price_ratio = 1.5           # Max. Preisabweichungs-Faktor (1.5x)
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
+
+        # Telegram Secrets aus den Umgebungsvariablen laden
+        self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
         self.exchanges = {
             'mexc': {'instance': ccxt.mexc({'enableRateLimit': True}), 'fee': 0.0005},
@@ -24,6 +31,25 @@ class PaperTrader:
                 "accepted", "depth_verified", "real_profit_pct", "status_note"
             ])
             writer.writeheader()
+
+    def send_telegram(self, message):
+        """Sendet eine Markdown-formatierte Nachricht an Telegram."""
+        if not self.telegram_token or not self.telegram_chat_id:
+            return  # Überspringen, falls keine Secrets gesetzt sind
+
+        try:
+            url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+            data = urllib.parse.urlencode({
+                "chat_id": self.telegram_chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }).encode('utf-8')
+
+            req = urllib.request.Request(url, data=data)
+            with urllib.request.urlopen(req, timeout=5) as response:
+                pass
+        except Exception as e:
+            print(f"⚠️ Telegram Fehler: {e}")
 
     def discover_common_symbols(self, ex1_tickers, ex2_tickers):
         syms1 = {s for s in ex1_tickers.keys() if s.endswith('/USDT')}
@@ -118,7 +144,7 @@ class PaperTrader:
         }
 
     def run(self):
-        print("🔎 Starte Cross-Exchange-Arbitrage-Scan mit korrigiertem Filter...")
+        print("🔎 Starte Cross-Exchange-Arbitrage-Scan mit Telegram-Benachrichtigung...")
 
         exchange_pairs = [
             ('mexc', 'binance'),
@@ -170,6 +196,18 @@ class PaperTrader:
                                     found_verified += 1
                                     accepted_final = True
                                     status = "VALID_TRADE"
+
+                                    # 📩 Telegram Alarm senden
+                                    est_profit_usd = (self.amount * real_pct) / 100
+                                    msg = (
+                                        f"🚀 *ARBITRAGE SIGNAL FOUND!*\n\n"
+                                        f"📌 *Symbol:* `{res['symbol']}`\n"
+                                        f"🛒 *Kaufen:* {res['buy_ex'].upper()} @ `${res['buy_price']}`\n"
+                                        f"💰 *Verkaufen:* {res['sell_ex'].upper()} @ `${res['sell_price']}`\n"
+                                        f"📈 *Netto-Marge:* `+{real_pct:.2f}%`\n"
+                                        f"💵 *Gewinn (${self.amount}):* `+${est_profit_usd:.4f}`"
+                                    )
+                                    self.send_telegram(msg)
                                 else:
                                     status = "DEPTH_FAILED_OR_OUTLIER"
 
