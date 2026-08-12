@@ -9,7 +9,7 @@ import urllib.parse
 # ============================================================
 # Ersetze die Punkte unten durch deinen echten langen Token vom BotFather!
 TELEGRAM_TOKEN = "8936868719:AAGhacDVldrjdt8ygSQ4kqnXNiWQqNYcfY4" 
-TELEGRAM_CHAT_ID = "1986780629"
+TELEGRAM_CHAT_ID = "1986780629"  
 
 class PaperTrader:
     def __init__(self, exchange_name="bitrue", amount=100.0, threshold=0.01, scans=1800):
