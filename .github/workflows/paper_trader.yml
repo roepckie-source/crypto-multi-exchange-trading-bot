@@ -28,7 +28,7 @@ on:
           - kucoin
 
   schedule:
-    - cron: '*/30 * * * *' # Automatischer Lauf alle 30 Minuten
+    - cron: '*/30 * * * *'
 
 jobs:
   run-paper-trader:
@@ -51,11 +51,49 @@ jobs:
       - name: Paper Trader ausführen
         run: python -u main.py
         env:
-          # Nutzt manuell eingegebene Werte (inputs) oder fällt bei Cron-Jobs auf Standardwerte zurück
           EXCHANGE_NAME: ${{ inputs.exchange_name || 'bitrue' }}
           TRADE_AMOUNT: ${{ inputs.trade_amount || '10.0' }}
           MIN_THRESHOLD: ${{ inputs.min_threshold || '0.01' }}
           TOTAL_SCANS: ${{ inputs.total_scans || '50' }}
+
+      - name: Zusammenfassung in Step Summary schreiben
+        if: always()
+        run: |
+          python -c "
+          import csv, os
+
+          csv_file = 'trading_results.csv'
+          summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
+
+          if not os.path.exists(csv_file) or not summary_file:
+              exit(0)
+
+          with open(csv_file, mode='r', encoding='utf-8') as f:
+              reader = list(csv.DictReader(f))
+
+          total_scans = len(set(r['scan'] for r in reader)) if reader else 0
+          accepted_trades = [r for r in reader if r['accepted'] == 'True']
+          
+          # Beste Rendite ermitteln
+          best_pct = max([float(r['profit_pct']) for r in reader]) if reader else 0.0
+
+          markdown = f'### 📊 Arbitrage Scan Ergebnisse\n\n'
+          markdown += f'- **Gesamte Scans:** {total_scans}\n'
+          markdown += f'- **Akzeptierte Trades:** {len(accepted_trades)}\n'
+          markdown += f'- **Beste Netto-Rendite:** `{best_pct:+.4f}%`\n\n'
+
+          if accepted_trades:
+              markdown += '#### 🟢 Gefundene Gelegenheiten\n\n'
+              markdown += '| Scan | Route | Rendite (%) | Gewinn ($) |\n'
+              markdown += '| --- | --- | --- | --- |\n'
+              for r in accepted_trades:
+                  markdown += f'| {r[\"scan\"]} | `{r[\"route\"]}` | `{r[\"profit_pct\"]}%` | `${r[\"profit_usd\"]}` |\n'
+          else:
+              markdown += '> 🔴 **Keine profitablen Gelegenheiten** im letzten Durchlauf gefunden.\n'
+
+          with open(summary_file, 'a', encoding='utf-8') as f:
+              f.write(markdown)
+          "
 
       - name: Ergebnisse als Artefakt hochladen
         if: always()
