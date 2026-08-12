@@ -9,14 +9,14 @@ class PaperTrader:
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
 
-        # Wir vergleichen MEXC (niedrige Gebühren) mit Binance & Gate.io
+        # ccxt nutzt 'gate' statt 'gateio'
         self.exchanges = {
             'mexc': {'instance': ccxt.mexc({'enableRateLimit': True}), 'fee': 0.0005},
             'binance': {'instance': ccxt.binance({'enableRateLimit': True}), 'fee': 0.001},
-            'gateio': {'instance': ccxt.gateio({'enableRateLimit': True}), 'fee': 0.002}
+            'gate': {'instance': ccxt.gate({'enableRateLimit': True}), 'fee': 0.002}
         }
 
-        # CSV Header anpassen
+        # CSV Header
         with open(self.csv_file, mode="w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "scan", "symbol", "buy_exchange", "sell_exchange", 
@@ -73,7 +73,7 @@ class PaperTrader:
         # Paare von Börsen vergleichen: (MEXC vs Binance, MEXC vs Gate.io)
         exchange_pairs = [
             ('mexc', 'binance'),
-            ('mexc', 'gateio')
+            ('mexc', 'gate')
         ]
 
         for scan in range(1, self.total_scans + 1):
