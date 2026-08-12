@@ -6,6 +6,8 @@ class PaperTrader:
     def __init__(self, amount=10.0, threshold=0.01, scans=50, **kwargs):
         self.amount = amount
         self.min_profit_threshold = threshold
+        self.max_profit_threshold = 5.0      # Maximal realistischer Gewinn (+5 %)
+        self.max_price_ratio = 1.5           # Max. Erlaubte Preisabweichung (Faktor 1.5)
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
 
@@ -19,7 +21,7 @@ class PaperTrader:
             writer = csv.DictWriter(f, fieldnames=[
                 "scan", "symbol", "buy_exchange", "sell_exchange", 
                 "buy_price", "sell_price", "profit_pct", "profit_usd", 
-                "accepted", "depth_verified", "real_profit_pct"
+                "accepted", "depth_verified", "real_profit_pct", "status_note"
             ])
             writer.writeheader()
 
@@ -89,6 +91,11 @@ class PaperTrader:
         if not ask_price or not bid_price or ask_price <= 0 or bid_price <= 0:
             return None
 
+        # Sanity Check 1: Preis-Ratios prüfen (Ticker-Collision / Redenomination Protection)
+        price_ratio = bid_price / ask_price
+        if price_ratio > self.max_price_ratio or price_ratio < (1 / self.max_price_ratio):
+            return None
+
         fee_buy = self.exchanges[ex_buy_name]['fee']
         fee_sell = self.exchanges[ex_sell_name]['fee']
 
@@ -98,6 +105,9 @@ class PaperTrader:
         profit_usd = final_usdt - self.amount
         profit_pct = (profit_usd / self.amount) * 100
 
+        # Sanity Check 2: Gewinn-Obergrenze prüfen
+        is_realistic = profit_pct <= self.max_profit_threshold
+
         return {
             'symbol': symbol,
             'buy_ex': ex_buy_name,
@@ -106,11 +116,12 @@ class PaperTrader:
             'sell_price': bid_price,
             'profit_pct': profit_pct,
             'profit_usd': profit_usd,
-            'accepted': profit_pct >= self.min_profit_threshold
+            'accepted': (profit_pct >= self.min_profit_threshold) and is_realistic,
+            'is_realistic': is_realistic
         }
 
     def run(self):
-        print("🔎 Starte Cross-Exchange-Arbitrage-Scan mit Orderbuch-Tiefen-Filter...")
+        print("🔎 Starte Cross-Exchange-Arbitrage-Scan mit Sanity-Checks & Tiefen-Filter...")
 
         exchange_pairs = [
             ('mexc', 'binance'),
@@ -147,20 +158,28 @@ class PaperTrader:
                         if res and res['profit_pct'] > -0.2:
                             depth_ok = False
                             real_pct = 0.0
+                            status = "OK"
 
-                            # Tiefenprüfung nur für vielversprechende Chancen ausführen
                             if res['accepted']:
                                 depth_ok, real_pct = self.verify_orderbook_depth(
                                     res['symbol'], res['buy_ex'], res['sell_ex']
                                 )
-                                if depth_ok and real_pct >= self.min_profit_threshold:
+                                # Nachprüfung: Auch der echte Orderbuch-Gewinn muss realistisch sein
+                                is_valid = (
+                                    depth_ok and 
+                                    self.min_profit_threshold <= real_pct <= self.max_profit_threshold
+                                )
+                                if is_valid:
                                     found_verified += 1
+                                    status = "VALID_TRADE"
+                                else:
+                                    status = "DEPTH_FAILED_OR_OUTLIER"
 
                             with open(self.csv_file, mode="a", newline="", encoding="utf-8") as f:
                                 writer = csv.DictWriter(f, fieldnames=[
                                     "scan", "symbol", "buy_exchange", "sell_exchange", 
                                     "buy_price", "sell_price", "profit_pct", "profit_usd", 
-                                    "accepted", "depth_verified", "real_profit_pct"
+                                    "accepted", "depth_verified", "real_profit_pct", "status_note"
                                 ])
                                 writer.writerow({
                                     "scan": scan,
@@ -171,9 +190,10 @@ class PaperTrader:
                                     "sell_price": res['sell_price'],
                                     "profit_pct": round(res['profit_pct'], 4),
                                     "profit_usd": round(res['profit_usd'], 4),
-                                    "accepted": depth_ok and real_pct >= self.min_profit_threshold,
+                                    "accepted": res['accepted'] and depth_ok and (real_pct <= self.max_profit_threshold),
                                     "depth_verified": depth_ok,
-                                    "real_profit_pct": round(real_pct, 4) if depth_ok else 0.0
+                                    "real_profit_pct": round(real_pct, 4) if depth_ok else 0.0,
+                                    "status_note": status
                                 })
 
             print(f"   -> Echte verifizierte Chancen in Scan {scan}: {found_verified}")
