@@ -3,7 +3,7 @@ import time
 import ccxt
 
 class PaperTrader:
-    def __init__(self, amount=10.0, threshold=0.01, scans=35, **kwargs):
+    def __init__(self, amount=10.0, threshold=0.01, scans=25, **kwargs):
         self.amount = amount
         self.min_profit_threshold = threshold
         self.max_profit_threshold = 5.0      # Maximal realistischer Gewinn (+5 %)
@@ -11,9 +11,9 @@ class PaperTrader:
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
 
+        # Binance entfernt, da GitHub-Server (US-IPs) von Binance geblockt werden
         self.exchanges = {
             'mexc': {'instance': ccxt.mexc({'enableRateLimit': True}), 'fee': 0.0005},
-            'binance': {'instance': ccxt.binance({'enableRateLimit': True}), 'fee': 0.001},
             'gate': {'instance': ccxt.gate({'enableRateLimit': True}), 'fee': 0.002}
         }
 
@@ -138,10 +138,9 @@ class PaperTrader:
         print("="*60 + "\n")
 
     def run(self):
-        print("🔎 Starte Cross-Exchange-Arbitrage-Scan...")
+        print("🔎 Starte Cross-Exchange-Arbitrage-Scan (MEXC <-> Gate.io)...")
 
         exchange_pairs = [
-            ('mexc', 'binance'),
             ('mexc', 'gate')
         ]
 
@@ -236,5 +235,5 @@ class PaperTrader:
         self.print_summary(total_valid_trades, total_session_profit_usd, valid_trades_list)
 
 if __name__ == "__main__":
-    trader = PaperTrader(amount=10.0, threshold=0.01, scans=35)
+    trader = PaperTrader(amount=10.0, threshold=0.01, scans=25)
     trader.run()
