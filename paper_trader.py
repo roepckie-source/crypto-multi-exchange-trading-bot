@@ -117,6 +117,26 @@ class PaperTrader:
             'accepted': (profit_pct >= self.min_profit_threshold) and is_realistic
         }
 
+    def print_summary(self, total_trades, total_profit_usd, valid_trades_list):
+        print("\n" + "="*60)
+        print("📊 SESSION SUMMARY & ARBITRAGE REPORT")
+        print("="*60)
+        print(f"Eingesetztes Kapital pro Trade:  ${self.amount:.2f} USD")
+        print(f"Gefundene valide Trades:        {total_trades}")
+        
+        if total_trades > 0:
+            avg_profit_pct = sum(t['pct'] for t in valid_trades_list) / total_trades
+            avg_profit_usd = sum(t['usd'] for t in valid_trades_list) / total_trades
+            print(f"Akkumulierter Gesamtertrag:     +${total_profit_usd:.4f} USD")
+            print(f"Durchschnittlicher Gewinn:       +{avg_profit_pct:.3f}% (+${avg_profit_usd:.4f} USD)")
+            print("\nTOP 5 TRADES DES RUNS:")
+            sorted_trades = sorted(valid_trades_list, key=lambda x: x['pct'], reverse=True)[:5]
+            for i, t in enumerate(sorted_trades, 1):
+                print(f"  {i}. {t['symbol']} ({t['buy']} -> {t['sell']}): +{t['pct']:.2f}% (+${t['usd']:.4f})")
+        else:
+            print("Keine verifizierten VALID_TRADES in dieser Session gefunden.")
+        print("="*60 + "\n")
+
     def run(self):
         print("🔎 Starte Cross-Exchange-Arbitrage-Scan...")
 
@@ -124,6 +144,10 @@ class PaperTrader:
             ('mexc', 'binance'),
             ('mexc', 'gate')
         ]
+
+        total_valid_trades = 0
+        total_session_profit_usd = 0.0
+        valid_trades_list = []
 
         for scan in range(1, self.total_scans + 1):
             print(f"⚡ Scan {scan}/{self.total_scans} wird ausgeführt...")
@@ -170,6 +194,17 @@ class PaperTrader:
                                     found_verified += 1
                                     accepted_final = True
                                     status = "VALID_TRADE"
+
+                                    real_profit_usd = (self.amount * real_pct) / 100
+                                    total_valid_trades += 1
+                                    total_session_profit_usd += real_profit_usd
+                                    valid_trades_list.append({
+                                        'symbol': res['symbol'],
+                                        'buy': res['buy_ex'].upper(),
+                                        'sell': res['sell_ex'].upper(),
+                                        'pct': real_pct,
+                                        'usd': real_profit_usd
+                                    })
                                 else:
                                     status = "DEPTH_FAILED_OR_OUTLIER"
 
@@ -198,7 +233,9 @@ class PaperTrader:
             time.sleep(1)
 
         print(f"\n✅ Analyse abgeschlossen. Ergebnisse in '{self.csv_file}' gespeichert.")
+        self.print_summary(total_valid_trades, total_session_profit_usd, valid_trades_list)
 
 if __name__ == "__main__":
+    # Tipp: scans=200 erhöht die Laufzeit auf ca. 1 Stunde!
     trader = PaperTrader(amount=10.0, threshold=0.01, scans=50)
     trader.run()
