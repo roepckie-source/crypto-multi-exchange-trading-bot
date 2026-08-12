@@ -3,9 +3,10 @@ import time
 import ccxt
 
 class PaperTrader:
-    def __init__(self, exchange_name="mexc", amount=10.0, scans=50):
+    def __init__(self, exchange_name="mexc", amount=10.0, threshold=0.01, scans=50, **kwargs):
         self.exchange_name = exchange_name
         self.amount = amount
+        self.min_profit_threshold = threshold
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
         
@@ -87,7 +88,7 @@ class PaperTrader:
                             "route": route_str,
                             "profit_pct": round(hybrid_pct, 4),
                             "profit_usd": round(usd_diff, 4),
-                            "accepted": hybrid_pct > 0.01,
+                            "accepted": hybrid_pct >= self.min_profit_threshold,
                             "taker_profit_pct": round(taker_pct, 4),
                             "maker_profit_pct": round(maker_pct, 4),
                             "hybrid_profit_pct": round(hybrid_pct, 4)
@@ -99,5 +100,5 @@ class PaperTrader:
         print(f"\n✅ Analyse abgeschlossen. CSV unter '{self.csv_file}' gespeichert.")
 
 if __name__ == "__main__":
-    trader = PaperTrader(exchange_name="mexc", amount=10.0, scans=50)
+    trader = PaperTrader(exchange_name="mexc", amount=10.0, threshold=0.01, scans=50)
     trader.run()
