@@ -1,10 +1,34 @@
-name: Bitrue Paper Trader (Intervall-Scan)
+name: Bitrue Paper Trader
 
 on:
-  workflow_dispatch: # Erlaubt manuelles Starten
+  workflow_dispatch:
+    inputs:
+      total_scans:
+        description: 'Anzahl der Scans'
+        required: true
+        default: '50'
+        type: string
+      trade_amount:
+        description: 'Einsatz in USDT'
+        required: true
+        default: '10.0'
+        type: string
+      min_threshold:
+        description: 'Mindestgewinn in %'
+        required: true
+        default: '0.01'
+        type: string
+      exchange_name:
+        description: 'Börse auswählen'
+        required: true
+        default: 'bitrue'
+        type: choice
+        options:
+          - bitrue
+          - kucoin
+
   schedule:
-    # Läuft automatisch alle 30 Minuten (in UTC-Zeit)
-    - cron: '*/30 * * * *'
+    - cron: '*/30 * * * *' # Automatischer Lauf alle 30 Minuten
 
 jobs:
   run-paper-trader:
@@ -27,16 +51,16 @@ jobs:
       - name: Paper Trader ausführen
         run: python -u main.py
         env:
-          EXCHANGE_NAME: "bitrue"
-          TRADE_AMOUNT: "10.0"     # 10 EUR/USDT Einsatz
-          MIN_THRESHOLD: "0.01"    # Mindestgewinn 0.01%
-          TOTAL_SCANS: "30"        # 30 Scans pro Intervall (~2-3 Minuten Laufzeit)
+          # Nutzt manuell eingegebene Werte (inputs) oder fällt bei Cron-Jobs auf Standardwerte zurück
+          EXCHANGE_NAME: ${{ inputs.exchange_name || 'bitrue' }}
+          TRADE_AMOUNT: ${{ inputs.trade_amount || '10.0' }}
+          MIN_THRESHOLD: ${{ inputs.min_threshold || '0.01' }}
+          TOTAL_SCANS: ${{ inputs.total_scans || '50' }}
 
       - name: Ergebnisse als Artefakt hochladen
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          # Eindeutiger Name pro Durchlauf (verhindert Überschreiben)
           name: trading-results-${{ github.run_id }}
           path: **/trading_results.csv
           if-no-files-found: ignore
