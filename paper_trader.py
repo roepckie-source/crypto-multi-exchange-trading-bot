@@ -9,37 +9,82 @@ class PaperTrader:
         self.total_scans = scans
         self.csv_file = "trading_results.csv"
 
-        # ccxt nutzt 'gate' statt 'gateio'
         self.exchanges = {
             'mexc': {'instance': ccxt.mexc({'enableRateLimit': True}), 'fee': 0.0005},
             'binance': {'instance': ccxt.binance({'enableRateLimit': True}), 'fee': 0.001},
             'gate': {'instance': ccxt.gate({'enableRateLimit': True}), 'fee': 0.002}
         }
 
-        # CSV Header
         with open(self.csv_file, mode="w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "scan", "symbol", "buy_exchange", "sell_exchange", 
-                "buy_price", "sell_price", "profit_pct", "profit_usd", "accepted"
+                "buy_price", "sell_price", "profit_pct", "profit_usd", 
+                "accepted", "depth_verified", "real_profit_pct"
             ])
             writer.writeheader()
 
     def discover_common_symbols(self, ex1_tickers, ex2_tickers):
-        """Findet alle gemeinsamen USDT-Handelspaare auf zwei Börsen."""
         syms1 = {s for s in ex1_tickers.keys() if s.endswith('/USDT')}
         syms2 = {s for s in ex2_tickers.keys() if s.endswith('/USDT')}
         return list(syms1.intersection(syms2))
 
+    def calculate_depth_cost(self, orderbook, amount_needed, is_buy=True):
+        orders = orderbook['asks'] if is_buy else orderbook['bids']
+        filled_amount = 0.0
+        total_cost = 0.0
+
+        for price, volume in orders:
+            needed = amount_needed - filled_amount
+            if volume >= needed:
+                total_cost += needed * price
+                filled_amount += needed
+                break
+            else:
+                total_cost += volume * price
+                filled_amount += volume
+
+        if filled_amount < amount_needed:
+            return None
+        
+        return total_cost / amount_needed
+
+    def verify_orderbook_depth(self, symbol, ex_buy_name, ex_sell_name):
+        try:
+            ex_buy = self.exchanges[ex_buy_name]['instance']
+            ex_sell = self.exchanges[ex_sell_name]['instance']
+
+            ob_buy = ex_buy.fetch_order_book(symbol, limit=10)
+            ob_sell = ex_sell.fetch_order_book(symbol, limit=10)
+
+            avg_buy_price = self.calculate_depth_cost(ob_buy, self.amount, is_buy=True)
+            if not avg_buy_price:
+                return False, 0.0
+
+            fee_buy = self.exchanges[ex_buy_name]['fee']
+            fee_sell = self.exchanges[ex_sell_name]['fee']
+
+            bought_coins = (self.amount / avg_buy_price) * (1 - fee_buy)
+            avg_sell_price = self.calculate_depth_cost(ob_sell, bought_coins, is_buy=False)
+
+            if not avg_sell_price:
+                return False, 0.0
+
+            final_usdt = (bought_coins * avg_sell_price) * (1 - fee_sell)
+            real_pct = ((final_usdt - self.amount) / self.amount) * 100
+
+            return True, real_pct
+        except Exception:
+            return False, 0.0
+
     def evaluate_cross_arbitrage(self, symbol, ex_buy_name, ex_buy_data, ex_sell_name, ex_sell_data):
-        """Berechnet Arbitrage-Gewinn: Kaufen auf Börse A (Ask), Verkaufen auf Börse B (Bid)."""
         ticker_buy = ex_buy_data.get(symbol)
         ticker_sell = ex_sell_data.get(symbol)
 
         if not ticker_buy or not ticker_sell:
             return None
 
-        ask_price = ticker_buy.get('ask')  # Kaufpreis auf Börse A
-        bid_price = ticker_sell.get('bid') # Verkaufspreis auf Börse B
+        ask_price = ticker_buy.get('ask')
+        bid_price = ticker_sell.get('bid')
 
         if not ask_price or not bid_price or ask_price <= 0 or bid_price <= 0:
             return None
@@ -47,10 +92,7 @@ class PaperTrader:
         fee_buy = self.exchanges[ex_buy_name]['fee']
         fee_sell = self.exchanges[ex_sell_name]['fee']
 
-        # Schritt 1: Kaufen auf Börse A
         bought_coins = (self.amount / ask_price) * (1 - fee_buy)
-
-        # Schritt 2: Verkaufen auf Börse B
         final_usdt = (bought_coins * bid_price) * (1 - fee_sell)
 
         profit_usd = final_usdt - self.amount
@@ -58,8 +100,8 @@ class PaperTrader:
 
         return {
             'symbol': symbol,
-            'buy_ex': ex_buy_name.upper(),
-            'sell_ex': ex_sell_name.upper(),
+            'buy_ex': ex_buy_name,
+            'sell_ex': ex_sell_name,
             'buy_price': ask_price,
             'sell_price': bid_price,
             'profit_pct': profit_pct,
@@ -68,9 +110,8 @@ class PaperTrader:
         }
 
     def run(self):
-        print("🔎 Starte Cross-Exchange-Arbitrage-Scan...")
+        print("🔎 Starte Cross-Exchange-Arbitrage-Scan mit Orderbuch-Tiefen-Filter...")
 
-        # Paare von Börsen vergleichen: (MEXC vs Binance, MEXC vs Gate.io)
         exchange_pairs = [
             ('mexc', 'binance'),
             ('mexc', 'gate')
@@ -79,7 +120,6 @@ class PaperTrader:
         for scan in range(1, self.total_scans + 1):
             print(f"⚡ Scan {scan}/{self.total_scans} wird ausgeführt...")
 
-            # Tickers von allen Börsen laden
             tickers_cache = {}
             for name, data in self.exchanges.items():
                 try:
@@ -88,7 +128,7 @@ class PaperTrader:
                     print(f"⚠️ Fehler beim Laden von {name}: {e}")
                     tickers_cache[name] = {}
 
-            found_opportunities = 0
+            found_verified = 0
 
             for ex1_name, ex2_name in exchange_pairs:
                 t1 = tickers_cache.get(ex1_name, {})
@@ -100,34 +140,43 @@ class PaperTrader:
                 common_symbols = self.discover_common_symbols(t1, t2)
 
                 for symbol in common_symbols:
-                    # Richtung 1: Kaufen auf Ex1 -> Verkaufen auf Ex2
                     res1 = self.evaluate_cross_arbitrage(symbol, ex1_name, t1, ex2_name, t2)
-                    # Richtung 2: Kaufen auf Ex2 -> Verkaufen auf Ex1
                     res2 = self.evaluate_cross_arbitrage(symbol, ex2_name, t2, ex1_name, t1)
 
                     for res in [res1, res2]:
-                        if res and res['profit_pct'] > -0.2:  # Nur relevante Trades protokollieren
+                        if res and res['profit_pct'] > -0.2:
+                            depth_ok = False
+                            real_pct = 0.0
+
+                            # Tiefenprüfung nur für vielversprechende Chancen ausführen
                             if res['accepted']:
-                                found_opportunities += 1
+                                depth_ok, real_pct = self.verify_orderbook_depth(
+                                    res['symbol'], res['buy_ex'], res['sell_ex']
+                                )
+                                if depth_ok and real_pct >= self.min_profit_threshold:
+                                    found_verified += 1
 
                             with open(self.csv_file, mode="a", newline="", encoding="utf-8") as f:
                                 writer = csv.DictWriter(f, fieldnames=[
                                     "scan", "symbol", "buy_exchange", "sell_exchange", 
-                                    "buy_price", "sell_price", "profit_pct", "profit_usd", "accepted"
+                                    "buy_price", "sell_price", "profit_pct", "profit_usd", 
+                                    "accepted", "depth_verified", "real_profit_pct"
                                 ])
                                 writer.writerow({
                                     "scan": scan,
                                     "symbol": res['symbol'],
-                                    "buy_exchange": res['buy_ex'],
-                                    "sell_exchange": res['sell_ex'],
+                                    "buy_exchange": res['buy_ex'].upper(),
+                                    "sell_exchange": res['sell_ex'].upper(),
                                     "buy_price": res['buy_price'],
                                     "sell_price": res['sell_price'],
                                     "profit_pct": round(res['profit_pct'], 4),
                                     "profit_usd": round(res['profit_usd'], 4),
-                                    "accepted": res['accepted']
+                                    "accepted": depth_ok and real_pct >= self.min_profit_threshold,
+                                    "depth_verified": depth_ok,
+                                    "real_profit_pct": round(real_pct, 4) if depth_ok else 0.0
                                 })
 
-            print(f"   -> Profitable Cross-Exchange Chancen in Scan {scan}: {found_opportunities}")
+            print(f"   -> Echte verifizierte Chancen in Scan {scan}: {found_verified}")
             time.sleep(1)
 
         print(f"\n✅ Analyse abgeschlossen. Ergebnisse in '{self.csv_file}' gespeichert.")
