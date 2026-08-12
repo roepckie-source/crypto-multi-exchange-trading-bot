@@ -3,7 +3,7 @@ import time
 import ccxt
 
 class PaperTrader:
-    def __init__(self, amount=10.0, threshold=0.01, scans=50, **kwargs):
+    def __init__(self, amount=10.0, threshold=0.01, scans=35, **kwargs):
         self.amount = amount
         self.min_profit_threshold = threshold
         self.max_profit_threshold = 5.0      # Maximal realistischer Gewinn (+5 %)
@@ -236,6 +236,5 @@ class PaperTrader:
         self.print_summary(total_valid_trades, total_session_profit_usd, valid_trades_list)
 
 if __name__ == "__main__":
-    # Tipp: scans=200 erhöht die Laufzeit auf ca. 1 Stunde!
-    trader = PaperTrader(amount=10.0, threshold=0.01, scans=50)
+    trader = PaperTrader(amount=10.0, threshold=0.01, scans=35)
     trader.run()
