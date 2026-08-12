@@ -8,7 +8,7 @@ import urllib.parse
 # TELEGRAM KONFIGURATION (Hier deine Daten eintragen)
 # ============================================================
 # Ersetze die Punkte unten durch deinen echten langen Token vom BotFather!
-TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQ..." 
+TELEGRAM_TOKEN = "8936868719:AAGhacDVldrjdt8ygSQ4kqnXNiWQqNYcfY4" 
 TELEGRAM_CHAT_ID = "1986780629"
 
 class PaperTrader:
