@@ -1,6 +1,14 @@
-from arbitrage_engine_v2 import run
-import asyncio
+from live_trader import MultiExchangeTrader
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    trader = MultiExchangeTrader(
+        amount_per_trade=10.0,
+        min_profit_pct=0.10,
+        dry_run=True
+    )
+
+    trader.run_continuous(
+        duration_hours=1,
+        delay_seconds=2
+    )
