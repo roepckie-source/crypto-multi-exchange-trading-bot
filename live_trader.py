@@ -7,7 +7,7 @@ class MultiExchangeTrader:
     def __init__(self, amount_per_trade=10.0, min_profit_pct=0.08, dry_run=True):
         self.amount = amount_per_trade          # Einsatz pro Trade in USDT (z. B. $10)
         self.min_profit_pct = min_profit_pct    # Mindestgewinn in % (z. B. 0.08%)
-        self.max_profit_pct = 5.0              # Safety-Cap gegen fehlerhafte Ticker / Ausreißer
+        self.max_profit_pct = 5.0               # Safety-Cap gegen fehlerhafte Ticker / Ausreißer
         self.dry_run = dry_run                  # True = Simulation (Paper Trading) | False = ECHTE ORDERS!
         
         self.csv_file = "paper_trading_results.csv" if dry_run else "live_trading_results.csv"
@@ -91,9 +91,22 @@ class MultiExchangeTrader:
         if not bid_sell or not ask_buy or ask_buy == 0:
             return
 
-        # Schnell-Filter per Ticker
+        # 1. Brutto-Marge (vor Gebühren) berechnen
         raw_margin = ((bid_sell - ask_buy) / ask_buy) * 100
-        if raw_margin < self.min_profit_pct:
+
+        # Geschätzte Gesamtgebühr beider Börsen (z. B. 0.1% + 0.1% = 0.2%)
+        fee_buy = self.exchanges[buy_ex_name]['fee']
+        fee_sell = self.exchanges[sell_ex_name]['fee']
+        total_fee_pct = (fee_buy + fee_sell) * 100
+
+        # Debug-Log: Zeigt alle Paare an, die zumindest einen kleinen Brutto-Unterschied (> 0.05%) haben
+        if raw_margin >= 0.05:
+            estimated_net = raw_margin - total_fee_pct
+            print(f"👀 [CHANCE ENTDECKT] {symbol} ({buy_ex_name.upper()} -> {sell_ex_name.upper()}): "
+                  f"Brutto: +{raw_margin:.3f}% | Est. Netto: {estimated_net:+.3f}%")
+
+        # Schnell-Filter: Nur weitermachen, wenn der geschätzte Netto-Gewinn die Mindestmarge erreicht
+        if (raw_margin - total_fee_pct) < self.min_profit_pct:
             return
 
         try:
@@ -110,15 +123,13 @@ class MultiExchangeTrader:
             buy_price = ob_buy['asks'][0][0]
             sell_price = ob_sell['bids'][0][0]
 
-            # Prüfe Orderbuch-Volumen auf Stufe 1 (ausreichend für unseren Einsatz?)
+            # Prüfe Orderbuch-Volumen auf Stufe 1
             buy_volume_available = ob_buy['asks'][0][1] * buy_price
             if buy_volume_available < self.amount:
-                return  # Zu wenig Liquidität im Orderbuch
+                print(f"⚠️ [{symbol}] Verworfen: Orderbuch-Liquidität zu gering (${buy_volume_available:.2f} < ${self.amount})")
+                return
 
-            fee_buy = self.exchanges[buy_ex_name]['fee']
-            fee_sell = self.exchanges[sell_ex_name]['fee']
-
-            # Netto-Berechnung inklusive Trading-Gebühren
+            # Exakte Netto-Berechnung inklusive Trading-Gebühren
             bought_coins = (self.amount / buy_price) * (1 - fee_buy)
             final_usdt = (bought_coins * sell_price) * (1 - fee_sell)
             
