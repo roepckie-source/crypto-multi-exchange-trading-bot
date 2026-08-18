@@ -28,7 +28,7 @@ class MultiExchangeTrader:
 
         self.chancen_csv_file = "log_chancen.csv"
 
-        self.orderbook_limit = 50
+        self.orderbook_limit = 20
 
         self.exchanges = {}
 
