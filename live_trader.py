@@ -3,17 +3,17 @@ import time
 import csv
 import ccxt
 
-class MultiExchangePaperTrader:
-    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.02, dry_run=True):
-        self.amount = amount_per_trade          # Simulierter Einsatz in USDT
-        self.min_profit_pct = min_profit_pct    # Mindestgewinnschwelle in %
-        self.max_profit_pct = 5.0              # Safety-Cap gegen Ausreißer
-        self.dry_run = dry_run                  # Im Paper Trading immer True
+class MultiExchangeTrader:
+    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.08, dry_run=True):
+        self.amount = amount_per_trade          # Einsatz pro Trade in USDT (z. B. $10)
+        self.min_profit_pct = min_profit_pct    # Mindestgewinn in % (z. B. 0.08%)
+        self.max_profit_pct = 5.0              # Safety-Cap gegen fehlerhafte Ticker / Ausreißer
+        self.dry_run = dry_run                  # True = Simulation (Paper Trading) | False = ECHTE ORDERS!
         
-        self.csv_file = "paper_trading_results.csv"
+        self.csv_file = "paper_trading_results.csv" if dry_run else "live_trading_results.csv"
         self.exchanges = {}
 
-        # 1. OKX Setup (EU-API Domain)
+        # 1. OKX Setup (EU-Domain Support)
         okx_key = os.getenv('OKX_API_KEY', '')
         if okx_key:
             try:
@@ -43,9 +43,24 @@ class MultiExchangePaperTrader:
             except Exception as e:
                 print(f"⚠️ Bitget Initialisierungsfehler: {e}")
 
+        # 3. KuCoin Setup
+        kucoin_key = os.getenv('KUCOIN_API_KEY', '')
+        if kucoin_key:
+            try:
+                ex = ccxt.kucoin({
+                    'apiKey': kucoin_key,
+                    'secret': os.getenv('KUCOIN_API_SECRET', ''),
+                    'password': os.getenv('KUCOIN_PASSPRASE', ''),
+                    'enableRateLimit': True,
+                })
+                self.exchanges['kucoin'] = {'instance': ex, 'fee': 0.001}
+            except Exception as e:
+                print(f"⚠️ KuCoin Initialisierungsfehler: {e}")
+
         self.init_csv()
 
     def init_csv(self):
+        """ Erstellt die CSV-Logdatei, falls sie nicht existiert """
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, mode="w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=[
@@ -55,6 +70,27 @@ class MultiExchangePaperTrader:
                 ])
                 writer.writeheader()
 
+    def check_balances(self, buy_ex, sell_ex, symbol):
+        """ Prüft das verfügbare Guthaben auf beiden Börsen vor einem Live-Trade """
+        try:
+            bal_buy = buy_ex.fetch_balance()
+            bal_sell = sell_ex.fetch_balance()
+
+            base_currency = symbol.split('/')[0] # z.B. ACE
+            quote_currency = symbol.split('/')[1] # USDT
+
+            usdt_buy = bal_buy.get('free', {}).get(quote_currency, 0.0)
+            coin_sell = bal_sell.get('free', {}).get(base_currency, 0.0)
+
+            if usdt_buy < self.amount:
+                print(f"⚠️ Unzureichendes USDT-Guthaben auf Käufer-Börse! Benötigt: {self.amount}, Verfügbar: {usdt_buy}")
+                return False
+
+            return True
+        except Exception as e:
+            print(f"⚠️ Fehler beim Balance-Check: {e}")
+            return False
+
     def execute_arbitrage(self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell):
         bid_sell = ticker_sell.get('bid')
         ask_buy = ticker_buy.get('ask')
@@ -62,6 +98,7 @@ class MultiExchangePaperTrader:
         if not bid_sell or not ask_buy or ask_buy == 0:
             return
 
+        # Schnell-Filter per Ticker
         raw_margin = ((bid_sell - ask_buy) / ask_buy) * 100
         if raw_margin < self.min_profit_pct:
             return
@@ -70,6 +107,7 @@ class MultiExchangePaperTrader:
             buy_ex = self.exchanges[buy_ex_name]['instance']
             sell_ex = self.exchanges[sell_ex_name]['instance']
 
+            # Orderbuch-Deep-Check (Top 5 Level)
             ob_buy = buy_ex.fetch_order_book(symbol, limit=5)
             ob_sell = sell_ex.fetch_order_book(symbol, limit=5)
 
@@ -79,9 +117,15 @@ class MultiExchangePaperTrader:
             buy_price = ob_buy['asks'][0][0]
             sell_price = ob_sell['bids'][0][0]
 
+            # Prüfe Orderbuch-Volumen auf Stufe 1 (ausreichend für unseren Einsatz?)
+            buy_volume_available = ob_buy['asks'][0][1] * buy_price
+            if buy_volume_available < self.amount:
+                return # Zu wenig Liquidität im Orderbuch
+
             fee_buy = self.exchanges[buy_ex_name]['fee']
             fee_sell = self.exchanges[sell_ex_name]['fee']
 
+            # Netto-Berechnung inklusive Trading-Gebühren
             bought_coins = (self.amount / buy_price) * (1 - fee_buy)
             final_usdt = (bought_coins * sell_price) * (1 - fee_sell)
             
@@ -89,9 +133,37 @@ class MultiExchangePaperTrader:
             profit_usd = final_usdt - self.amount
 
             if self.min_profit_pct <= real_profit_pct <= self.max_profit_pct:
-                print(f"🔥 [PAPER TRADE GEFUNDEN] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
+                mode_str = "PAPER_TRADING" if self.dry_run else "LIVE_REAL_MONEY"
+                print(f"🔥 [{mode_str}] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
                       f"| Marge: +{real_profit_pct:.3f}% (+${profit_usd:.4f})")
 
+                status = "SIMULATED_READY"
+
+                # Wenn dry_run == False, werden echte Orders ausgeführt
+                if not self.dry_run:
+                    if not self.check_balances(buy_ex, sell_ex, symbol):
+                        print("❌ Trade abgebrochen: Unzureichendes Guthaben.")
+                        return
+
+                    print(f"⚡ FÜHRE ECHTE ORDERS AUS FÜR {symbol}...")
+                    
+                    # 1. Kaufen auf Börse 1
+                    amount_to_buy = self.amount / buy_price
+                    amount_formatted = buy_ex.amount_to_precision(symbol, amount_to_buy)
+                    
+                    buy_order = buy_ex.create_market_buy_order(symbol, amount_formatted)
+                    print(f"✅ KAUF ERFOLGREICH ({buy_ex_name.upper()}): Order-ID {buy_order['id']}")
+
+                    executed_amount = buy_order.get('filled', float(amount_formatted))
+
+                    # 2. Verkaufen auf Börse 2
+                    sell_amount_formatted = sell_ex.amount_to_precision(symbol, executed_amount)
+                    sell_order = sell_ex.create_market_sell_order(symbol, sell_amount_formatted)
+                    print(f"✅ VERKAUF ERFOLGREICH ({sell_ex_name.upper()}): Order-ID {sell_order['id']}")
+
+                    status = "EXECUTED_SUCCESS"
+
+                # Protokollierung in CSV
                 with open(self.csv_file, mode="a", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=[
                         "timestamp", "symbol", "buy_ex", "sell_ex", 
@@ -107,31 +179,35 @@ class MultiExchangePaperTrader:
                         "sell_price": sell_price,
                         "real_profit_pct": round(real_profit_pct, 4),
                         "profit_usd": round(profit_usd, 4),
-                        "execution_mode": "PAPER_TRADING",
-                        "status": "SIMULATED_READY"
+                        "execution_mode": mode_str,
+                        "status": status
                     })
 
-        except Exception:
+        except Exception as e:
+            # Fehler abfangen und Log sauber halten
             pass
 
-    def run_continuous(self, duration_hours=6, delay_seconds=3):
-        """ Längerer Testlauf über mehrere Stunden """
-        print(f"🚀 Starte LÄNGEREN PAPER TRADING RUN...")
-        print(f"⏱️ Laufzeit: ca. {duration_hours} Stunden | Pause zwischen Scans: {delay_seconds} Sekunden.")
+    def run_continuous(self, duration_hours=1, delay_seconds=2):
+        """ Führt die Scans kontinuierlich für eine festgelegte Dauer aus """
+        mode_label = "PAPER TRADING (SIMULATION)" if self.dry_run else "LIVE TRADING (ECHTGELD)"
+        print(f"🚀 Starte Trader [{mode_label}]...")
+        print(f"⏱️ Laufzeit: {duration_hours} Stunde(n) | Pause zwischen Scans: {delay_seconds}s")
         
-        for name, data in self.exchanges.items():
+        # Märkte von allen aktiven Börsen laden
+        for name, data in list(self.exchanges.items()):
             try:
                 data['instance'].load_markets()
-                print(f"✅ Märkte geladen für {name.upper()}: {len(data['instance'].markets)} Märkte")
+                print(f"✅ Märkte geladen für {name.upper()}: {len(data['instance'].markets)} Paare")
             except Exception as e:
-                print(f"⚠️ Warnung bei {name.upper()}: {e}")
+                print(f"⚠️ Märkte konnten für {name.upper()} nicht geladen werden: {e}")
 
         start_time = time.time()
         end_time = start_time + (duration_hours * 3600)
         cycle = 1
 
         while time.time() < end_time:
-            print(f"🔄 Scan-Zyklus {cycle} | Verstrichene Zeit: {int((time.time() - start_time) / 60)} Min.")
+            elapsed_min = int((time.time() - start_time) / 60)
+            print(f"🔄 Scan-Zyklus {cycle} | Verstrichene Zeit: {elapsed_min} Min.")
             active = list(self.exchanges.keys())
             
             for i in range(len(active)):
@@ -157,13 +233,13 @@ class MultiExchangePaperTrader:
             cycle += 1
             time.sleep(delay_seconds)
 
-        print("🏁 Paper Trading Testlauf erfolgreich beendet!")
+        print("🏁 Testlauf beendet.")
 
 if __name__ == "__main__":
-    trader = MultiExchangePaperTrader(
-        amount_per_trade=10.0,   # Simulierter Einsatz
-        min_profit_pct=0.02,     # Mindestmarge (+0.02%)
-        dry_run=True             # Reine Simulation
+    trader = MultiExchangeTrader(
+        amount_per_trade=10.0,   # Simulierter / Echter Einsatz pro Trade in USDT
+        min_profit_pct=0.08,     # Mindestmarge (+0.08% Netto)
+        dry_run=True             # WICHTIG: True = Simulation | False = Echte Orders
     )
-    # Dauer in Stunden (z. B. 1 Stunde für GitHub Actions Runner Max-Time)
+    # Laufen lassen für 1 Stunde im GitHub Action Runner
     trader.run_continuous(duration_hours=1, delay_seconds=2)
