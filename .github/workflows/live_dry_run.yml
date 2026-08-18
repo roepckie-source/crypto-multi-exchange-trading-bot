@@ -6,13 +6,14 @@ on:
 jobs:
   run-dry-run:
     runs-on: ubuntu-latest
+    timeout-minutes: 70
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -26,9 +27,9 @@ jobs:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPRASE: ${{ secrets.OKX_PASSPRASE }}
-          BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
-          BITGET_API_SECRET: ${{ secrets.BITGET_API_SECRET }}
-          BITGET_PASSPRASE: ${{ secrets.BITGET_PASSPRASE }}
+          KUCOIN_API_KEY: ${{ secrets.KUCOIN_API_KEY }}
+          KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }}
+          KUCOIN_PASSPRASE: ${{ secrets.KUCOIN_PASSPRASE }}
         run: |
           python live_trader.py
 
@@ -37,4 +38,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dry-run-results
-          path: live_dry_run_results.csv
+          path: |
+            paper_trading_results.csv
+            live_trading_results.csv
