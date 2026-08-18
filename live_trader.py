@@ -4,13 +4,13 @@ import csv
 import ccxt
 
 class MultiExchangeLiveTrader:
-    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.02, dry_run=True):
-        self.amount = amount_per_trade          # Einsatz pro Trade in USDT
-        self.min_profit_pct = min_profit_pct    # Mindestgewinn in % (z. B. 0.02%)
-        self.max_profit_pct = 5.0              # Safety-Cap gegen Ausreißer/Fake-Daten
-        self.dry_run = dry_run                  # Safety Toggle: True = Dry Run
+    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.05, dry_run=True):
+        self.amount = amount_per_trade          # Einsatz pro Trade in USDT (z.B. 10$)
+        self.min_profit_pct = min_profit_pct    # Mindestgewinn in % (z. B. 0.05%)
+        self.max_profit_pct = 3.0              # Safety-Cap gegen Slippage / Fake-Orderbücher
+        self.dry_run = dry_run                  # ACHTUNG: False = ECHTE ORDERS!
         
-        self.csv_file = "live_dry_run_results.csv"
+        self.csv_file = "live_trading_results.csv"
         self.exchanges = {}
 
         # 1. OKX Setup (EU-API Support)
@@ -49,12 +49,11 @@ class MultiExchangeLiveTrader:
                 writer = csv.DictWriter(f, fieldnames=[
                     "timestamp", "symbol", "buy_ex", "sell_ex", 
                     "buy_price", "sell_price", "real_profit_pct", 
-                    "profit_usd", "min_amount_ok", "execution_mode", "status"
+                    "profit_usd", "execution_mode", "status"
                 ])
                 writer.writeheader()
 
     def execute_arbitrage(self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell):
-        # Schneller Vor-Check über Ticker-Preise vor dem teuren Orderbuch-Fetch
         bid_sell = ticker_sell.get('bid')
         ask_buy = ticker_buy.get('ask')
 
@@ -65,7 +64,6 @@ class MultiExchangeLiveTrader:
         if raw_margin < self.min_profit_pct:
             return
 
-        # Wenn der Roh-Spread attraktiv ist, holen wir das echte Orderbuch zur Tiefenprüfung
         try:
             buy_ex = self.exchanges[buy_ex_name]['instance']
             sell_ex = self.exchanges[sell_ex_name]['instance']
@@ -89,39 +87,62 @@ class MultiExchangeLiveTrader:
             profit_usd = final_usdt - self.amount
 
             if self.min_profit_pct <= real_profit_pct <= self.max_profit_pct:
-                print(f"🔥 [DRY RUN GEFUNDEN] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
-                      f"| Netto-Marge: +{real_profit_pct:.3f}% (+${profit_usd:.4f})")
+                mode_str = "DRY_RUN" if self.dry_run else "LIVE_REAL_MONEY"
+                print(f"🔥 [{mode_str}] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
+                      f"| Netto: +{real_profit_pct:.3f}% (+${profit_usd:.4f})")
+
+                status = "DETECTED"
+
+                if not self.dry_run:
+                    # ECHTE ORDERS AUSFÜHREN
+                    print(f"⚡ FÜHRE ECHTE ORDERS AUS FÜR {symbol}...")
+                    
+                    # 1. Kaufen auf Börse 1
+                    amount_to_buy = self.amount / buy_price
+                    amount_formatted = buy_ex.amount_to_precision(symbol, amount_to_buy)
+                    
+                    buy_order = buy_ex.create_market_buy_order(symbol, amount_formatted)
+                    print(f"✅ KAUF ERFOLGREICH auf {buy_ex_name.upper()}: {buy_order['id']}")
+
+                    # tatsächliche Kaufmenge ermitteln
+                    executed_amount = buy_order.get('filled', float(amount_formatted))
+
+                    # 2. Verkaufen auf Börse 2
+                    sell_amount_formatted = sell_ex.amount_to_precision(symbol, executed_amount)
+                    sell_order = sell_ex.create_market_sell_order(symbol, sell_amount_formatted)
+                    print(f"✅ VERKAUF ERFOLGREICH auf {sell_ex_name.upper()}: {sell_order['id']}")
+
+                    status = "EXECUTED_SUCCESS"
 
                 with open(self.csv_file, mode="a", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=[
                         "timestamp", "symbol", "buy_ex", "sell_ex", 
                         "buy_price", "sell_price", "real_profit_pct", 
-                        "profit_usd", "min_amount_ok", "execution_mode", "status"
+                        "profit_usd", "execution_mode", "status"
                     ])
                     writer.writerow({
                         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "symbol": symbol,
-                        "buy_ex": buy_ex.upper(),
-                        "sell_ex": sell_ex.upper(),
+                        "buy_ex": buy_ex_name.upper(),
+                        "sell_ex": sell_ex_name.upper(),
                         "buy_price": buy_price,
                         "sell_price": sell_price,
                         "real_profit_pct": round(real_profit_pct, 4),
                         "profit_usd": round(profit_usd, 4),
-                        "min_amount_ok": True,
-                        "execution_mode": "DRY_RUN",
-                        "status": "EXECUTION_READY"
+                        "execution_mode": mode_str,
+                        "status": status
                     })
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"❌ Fehler bei Order-Ausführung: {e}")
 
     def run(self, cycles=5):
-        print(f"🚀 Starte LIVE-Trader [DRY RUN] über Börsen: {', '.join([n.upper() for n in self.exchanges.keys()])}...")
+        mode_label = "DRY RUN (SIMULATION)" if self.dry_run else "LIVE TRADING (ECHTGELD)"
+        print(f"🚀 Starte Trader [{mode_label}] über: {', '.join([n.upper() for n in self.exchanges.keys()])}...")
         
         for name, data in self.exchanges.items():
             try:
                 data['instance'].load_markets()
-                print(f"✅ Märkte für {name.upper()} geladen ({len(data['instance'].markets)} Märkte).")
             except Exception as e:
                 print(f"❌ Fehler bei {name.upper()}: {e}")
 
@@ -152,5 +173,10 @@ class MultiExchangeLiveTrader:
             time.sleep(1)
 
 if __name__ == "__main__":
-    trader = MultiExchangeLiveTrader(amount_per_trade=10.0, min_profit_pct=0.02, dry_run=True)
+    # WICHTIG: Setze dry_run=False ERST WENN du bereit bist mit echtem Geld zu handeln!
+    trader = MultiExchangeLiveTrader(
+        amount_per_trade=10.0,   # Startkapital pro Trade (z.B. 10 USDT)
+        min_profit_pct=0.08,     # Mindestgewinnschwelle für echte Trades (z.B. 0.08%)
+        dry_run=True             # Vorher noch einmal testen mit True, dann auf False stellen!
+    )
     trader.run(cycles=5)
