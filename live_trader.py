@@ -29,21 +29,7 @@ class MultiExchangeTrader:
             except Exception as e:
                 print(f"⚠️ OKX Initialisierungsfehler: {e}")
 
-        # 2. Bitget Setup
-        bitget_key = os.getenv('BITGET_API_KEY', '')
-        if bitget_key:
-            try:
-                ex = ccxt.bitget({
-                    'apiKey': bitget_key,
-                    'secret': os.getenv('BITGET_API_SECRET', ''),
-                    'password': os.getenv('BITGET_PASSPRASE', ''),
-                    'enableRateLimit': True,
-                })
-                self.exchanges['bitget'] = {'instance': ex, 'fee': 0.001}
-            except Exception as e:
-                print(f"⚠️ Bitget Initialisierungsfehler: {e}")
-
-        # 3. KuCoin Setup
+        # 2. KuCoin Setup
         kucoin_key = os.getenv('KUCOIN_API_KEY', '')
         if kucoin_key:
             try:
@@ -76,7 +62,7 @@ class MultiExchangeTrader:
             bal_buy = buy_ex.fetch_balance()
             bal_sell = sell_ex.fetch_balance()
 
-            base_currency = symbol.split('/')[0] # z.B. ACE
+            base_currency = symbol.split('/')[0]  # z. B. ACE
             quote_currency = symbol.split('/')[1] # USDT
 
             usdt_buy = bal_buy.get('free', {}).get(quote_currency, 0.0)
@@ -120,7 +106,7 @@ class MultiExchangeTrader:
             # Prüfe Orderbuch-Volumen auf Stufe 1 (ausreichend für unseren Einsatz?)
             buy_volume_available = ob_buy['asks'][0][1] * buy_price
             if buy_volume_available < self.amount:
-                return # Zu wenig Liquidität im Orderbuch
+                return  # Zu wenig Liquidität im Orderbuch
 
             fee_buy = self.exchanges[buy_ex_name]['fee']
             fee_sell = self.exchanges[sell_ex_name]['fee']
