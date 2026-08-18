@@ -4,16 +4,16 @@ import csv
 import ccxt
 
 class MultiExchangeLiveTrader:
-    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.10, dry_run=True):
-        self.amount = amount_per_trade
-        self.min_profit_pct = min_profit_pct
-        self.max_profit_pct = 5.0
-        self.dry_run = dry_run
+    def __init__(self, amount_per_trade=10.0, min_profit_pct=0.02, dry_run=True):
+        self.amount = amount_per_trade          # Einsatz pro Trade in USDT
+        self.min_profit_pct = min_profit_pct    # Mindestgewinn in % (z. B. 0.02%)
+        self.max_profit_pct = 5.0              # Safety-Cap gegen Ausreißer/Fake-Daten
+        self.dry_run = dry_run                  # Safety Toggle: True = Dry Run
         
         self.csv_file = "live_dry_run_results.csv"
         self.exchanges = {}
 
-        # 1. OKX Setup (mit expliziter Domain-Einstellung)
+        # 1. OKX Setup (EU-API Support)
         okx_key = os.getenv('OKX_API_KEY', '')
         if okx_key:
             self.exchanges['okx'] = {
@@ -22,13 +22,10 @@ class MultiExchangeLiveTrader:
                     'secret': os.getenv('OKX_API_SECRET', ''),
                     'password': os.getenv('OKX_PASSPRASE', ''),
                     'enableRateLimit': True,
-                    'options': {
-                        'defaultType': 'spot',
-                    }
+                    'options': {'defaultType': 'spot'}
                 }),
                 'fee': 0.001
             }
-            # Setze EU Hostname falls nötig
             self.exchanges['okx']['instance'].hostname = 'my.okx.com'
 
         # 2. Bitget Setup
@@ -47,19 +44,32 @@ class MultiExchangeLiveTrader:
         self.init_csv()
 
     def init_csv(self):
-        with open(self.csv_file, mode="w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "timestamp", "symbol", "buy_ex", "sell_ex", 
-                "buy_price", "sell_price", "real_profit_pct", 
-                "profit_usd", "min_amount_ok", "execution_mode", "status"
-            ])
-            writer.writeheader()
+        if not os.path.exists(self.csv_file):
+            with open(self.csv_file, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "timestamp", "symbol", "buy_ex", "sell_ex", 
+                    "buy_price", "sell_price", "real_profit_pct", 
+                    "profit_usd", "min_amount_ok", "execution_mode", "status"
+                ])
+                writer.writeheader()
 
-    def execute_arbitrage(self, symbol, buy_ex_name, sell_ex_name):
-        buy_ex = self.exchanges[buy_ex_name]['instance']
-        sell_ex = self.exchanges[sell_ex_name]['instance']
+    def execute_arbitrage(self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell):
+        # Schneller Vor-Check über Ticker-Preise vor dem teuren Orderbuch-Fetch
+        bid_sell = ticker_sell.get('bid')
+        ask_buy = ticker_buy.get('ask')
 
+        if not bid_sell or not ask_buy or ask_buy == 0:
+            return
+
+        raw_margin = ((bid_sell - ask_buy) / ask_buy) * 100
+        if raw_margin < self.min_profit_pct:
+            return
+
+        # Wenn der Roh-Spread attraktiv ist, holen wir das echte Orderbuch zur Tiefenprüfung
         try:
+            buy_ex = self.exchanges[buy_ex_name]['instance']
+            sell_ex = self.exchanges[sell_ex_name]['instance']
+
             ob_buy = buy_ex.fetch_order_book(symbol, limit=5)
             ob_sell = sell_ex.fetch_order_book(symbol, limit=5)
 
@@ -79,8 +89,8 @@ class MultiExchangeLiveTrader:
             profit_usd = final_usdt - self.amount
 
             if self.min_profit_pct <= real_profit_pct <= self.max_profit_pct:
-                print(f"🔥 [DRY RUN] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
-                      f"| Marge: +{real_profit_pct:.3f}% (+${profit_usd:.3f})")
+                print(f"🔥 [DRY RUN GEFUNDEN] {symbol}: {buy_ex_name.upper()} -> {sell_ex_name.upper()} "
+                      f"| Netto-Marge: +{real_profit_pct:.3f}% (+${profit_usd:.4f})")
 
                 with open(self.csv_file, mode="a", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=[
@@ -111,9 +121,9 @@ class MultiExchangeLiveTrader:
         for name, data in self.exchanges.items():
             try:
                 data['instance'].load_markets()
-                print(f"✅ Märkte für {name.upper()} erfolgreich geladen ({len(data['instance'].markets)} Märkte).")
+                print(f"✅ Märkte für {name.upper()} geladen ({len(data['instance'].markets)} Märkte).")
             except Exception as e:
-                print(f"❌ Fehler beim Laden der Märkte für {name.upper()}: {e}")
+                print(f"❌ Fehler bei {name.upper()}: {e}")
 
         for cycle in range(1, cycles + 1):
             print(f"🔄 Scan-Zyklus {cycle}/{cycles}...")
@@ -131,15 +141,16 @@ class MultiExchangeLiveTrader:
                             s2 = {s for s in t2.keys() if s.endswith('/USDT')}
                             common = list(s1.intersection(s2))
 
-                            print(f"  🔍 Vergleiche {len(common)} gemeinsame Handelspaare zwischen {ex1.upper()} und {ex2.upper()}...")
+                            for symbol in common:
+                                ticker1 = t1.get(symbol, {})
+                                ticker2 = t2.get(symbol, {})
+                                self.execute_arbitrage(symbol, ex1, ex2, ticker1, ticker2)
 
-                            for symbol in common[:15]:  # Testweise die ersten 15 Paare scannen
-                                self.execute_arbitrage(symbol, ex1, ex2)
                         except Exception as e:
                             print(f"⚠️ Fehler beim Pair-Fetch {ex1}-{ex2}: {e}")
 
             time.sleep(1)
 
 if __name__ == "__main__":
-    trader = MultiExchangeLiveTrader(amount_per_trade=10.0, min_profit_pct=0.05, dry_run=True)
-    trader.run(cycles=3)
+    trader = MultiExchangeLiveTrader(amount_per_trade=10.0, min_profit_pct=0.02, dry_run=True)
+    trader.run(cycles=5)
