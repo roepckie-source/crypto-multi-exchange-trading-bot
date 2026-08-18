@@ -15,33 +15,40 @@ class MultiExchangeTrader:
 
         # 1. OKX Setup (EU-Domain Support)
         okx_key = os.getenv('OKX_API_KEY', '')
-        if okx_key:
-            try:
-                ex = ccxt.okx({
+        try:
+            okx_config = {
+                'enableRateLimit': True,
+                'options': {'defaultType': 'spot'}
+            }
+            if okx_key:
+                okx_config.update({
                     'apiKey': okx_key,
                     'secret': os.getenv('OKX_API_SECRET', ''),
-                    'password': os.getenv('OKX_PASSPRASE', ''),
-                    'enableRateLimit': True,
-                    'options': {'defaultType': 'spot'}
+                    'password': os.getenv('OKX_PASSPRASE', '')
                 })
-                ex.hostname = 'my.okx.com'
-                self.exchanges['okx'] = {'instance': ex, 'fee': 0.001}
-            except Exception as e:
-                print(f"⚠️ OKX Initialisierungsfehler: {e}")
+            ex = ccxt.okx(okx_config)
+            ex.hostname = 'my.okx.com'
+            self.exchanges['okx'] = {'instance': ex, 'fee': 0.001}
+        except Exception as e:
+            print(f"⚠️ OKX Initialisierungsfehler: {e}")
 
-        # 2. KuCoin Setup
+        # 2. KuCoin Setup (Funktioniert mit & ohne API-Keys)
         kucoin_key = os.getenv('KUCOIN_API_KEY', '')
-        if kucoin_key:
-            try:
-                ex = ccxt.kucoin({
+        try:
+            kucoin_config = {'enableRateLimit': True}
+            
+            # Schlüssel nur anhängen, wenn sie im Live-Modus benötigt werden oder vorhanden sind
+            if kucoin_key and not dry_run:
+                kucoin_config.update({
                     'apiKey': kucoin_key,
                     'secret': os.getenv('KUCOIN_API_SECRET', ''),
-                    'password': os.getenv('KUCOIN_PASSPRASE', ''),
-                    'enableRateLimit': True,
+                    'password': os.getenv('KUCOIN_PASSPRASE', '')  # CCXT verlangt 'password'
                 })
-                self.exchanges['kucoin'] = {'instance': ex, 'fee': 0.001}
-            except Exception as e:
-                print(f"⚠️ KuCoin Initialisierungsfehler: {e}")
+            
+            ex = ccxt.kucoin(kucoin_config)
+            self.exchanges['kucoin'] = {'instance': ex, 'fee': 0.001}
+        except Exception as e:
+            print(f"⚠️ KuCoin Initialisierungsfehler: {e}")
 
         self.init_csv()
 
@@ -169,8 +176,7 @@ class MultiExchangeTrader:
                         "status": status
                     })
 
-        except Exception as e:
-            # Fehler abfangen und Log sauber halten
+        except Exception:
             pass
 
     def run_continuous(self, duration_hours=1, delay_seconds=2):
@@ -227,5 +233,4 @@ if __name__ == "__main__":
         min_profit_pct=0.08,     # Mindestmarge (+0.08% Netto)
         dry_run=True             # WICHTIG: True = Simulation | False = Echte Orders
     )
-    # Laufen lassen für 1 Stunde im GitHub Action Runner
     trader.run_continuous(duration_hours=1, delay_seconds=2)
