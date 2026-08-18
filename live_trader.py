@@ -8,65 +8,58 @@ class MultiExchangeTrader:
 
     def __init__(
         self,
-        amount_per_trade=10.0,
-        starting_balance=1000.0,
+        starting_capital=1000.0,
+        amount_per_trade=1000.0,
         min_profit_pct=0.10,
         dry_run=True
     ):
 
         # =====================================================
-        # GRUNDEINSTELLUNGEN
+        # SICHERHEIT
         # =====================================================
 
+        self.starting_capital = float(starting_capital)
         self.amount = float(amount_per_trade)
-        self.starting_balance = float(starting_balance)
-        self.paper_balance = float(starting_balance)
-
         self.min_profit_pct = float(min_profit_pct)
 
-        # Sicherheitsgrenzen
-        self.max_raw_margin_pct = 5.0
+        # NIEMALS automatisch Echtgeld
+        self.dry_run = True if dry_run else False
 
-        # Paper Trading
-        self.dry_run = dry_run
+        # Schutz gegen fehlerhafte Marktdaten
+        self.max_raw_margin_pct = 5.0
 
         # Orderbook
         self.orderbook_limit = 20
 
-        # Scan
-        self.delay_seconds = 2
-
-        # =====================================================
-        # STATISTIK
-        # =====================================================
-
-        self.total_trades = 0
-        self.profitable_trades = 0
-        self.total_profit = 0.0
-
-        self.best_trade_profit = 0.0
-        self.worst_trade_profit = 0.0
-
-        # Bereits gehandelte Chancen
-        # verhindert Doppelzählung derselben Chance
-        self.recent_trades = {}
-
-        # Cooldown in Sekunden
-        self.trade_cooldown = 30
-
-        # =====================================================
-        # CSV
-        # =====================================================
-
-        self.csv_file = (
-            "paper_trading_results.csv"
-            if dry_run
-            else "live_trading_results.csv"
-        )
-
-        self.chancen_csv_file = "log_chancen.csv"
+        # Gebühren
+        self.fees = {
+            "okx": 0.001,
+            "kucoin": 0.001
+        }
 
         self.exchanges = {}
+
+        # Virtuelle Guthaben
+        self.balances = {
+            "okx": {
+                "usdt": self.starting_capital,
+                "coin_value": 0.0
+            },
+            "kucoin": {
+                "usdt": self.starting_capital,
+                "coin_value": 0.0
+            }
+        }
+
+        self.total_profit = 0.0
+        self.total_trades = 0
+        self.winning_trades = 0
+        self.losing_trades = 0
+
+        self.profits = []
+
+        self.csv_file = "paper_trading_v2_results.csv"
+        self.chancen_csv_file = "paper_trading_v2_chancen.csv"
 
         # =====================================================
         # OKX
@@ -74,7 +67,7 @@ class MultiExchangeTrader:
 
         try:
 
-            okx_config = {
+            config = {
                 "enableRateLimit": True,
                 "timeout": 10000,
                 "options": {
@@ -82,30 +75,12 @@ class MultiExchangeTrader:
                 }
             }
 
-            okx_key = os.getenv(
-                "OKX_API_KEY",
-                ""
-            )
-
-            if okx_key and not dry_run:
-
-                okx_config.update({
-                    "apiKey": okx_key,
-                    "secret": os.getenv(
-                        "OKX_API_SECRET",
-                        ""
-                    ),
-                    "password": os.getenv(
-                        "OKX_PASSPRASE",
-                        ""
-                    )
-                })
-
-            ex = ccxt.okx(okx_config)
+            # API-Schlüssel werden im Paperhandel NICHT benötigt
+            ex = ccxt.okx(config)
 
             self.exchanges["okx"] = {
                 "instance": ex,
-                "fee": 0.001
+                "fee": self.fees["okx"]
             }
 
         except Exception as e:
@@ -120,35 +95,16 @@ class MultiExchangeTrader:
 
         try:
 
-            kucoin_config = {
+            config = {
                 "enableRateLimit": True,
                 "timeout": 10000
             }
 
-            kucoin_key = os.getenv(
-                "KUCOIN_API_KEY",
-                ""
-            )
-
-            if kucoin_key and not dry_run:
-
-                kucoin_config.update({
-                    "apiKey": kucoin_key,
-                    "secret": os.getenv(
-                        "KUCOIN_API_SECRET",
-                        ""
-                    ),
-                    "password": os.getenv(
-                        "KUCOIN_PASSPRASE",
-                        ""
-                    )
-                })
-
-            ex = ccxt.kucoin(kucoin_config)
+            ex = ccxt.kucoin(config)
 
             self.exchanges["kucoin"] = {
                 "instance": ex,
-                "fee": 0.001
+                "fee": self.fees["kucoin"]
             }
 
         except Exception as e:
@@ -160,7 +116,7 @@ class MultiExchangeTrader:
         self.init_csv()
 
     # =========================================================
-    # CSV INITIALISIEREN
+    # CSV
     # =========================================================
 
     def init_csv(self):
@@ -174,29 +130,23 @@ class MultiExchangeTrader:
                 encoding="utf-8"
             ) as f:
 
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "timestamp",
-                        "symbol",
-                        "buy_ex",
-                        "sell_ex",
-                        "buy_price",
-                        "sell_price",
-                        "raw_margin_pct",
-                        "real_profit_pct",
-                        "profit_usd",
-                        "paper_balance",
-                        "execution_mode",
-                        "status"
-                    ]
-                )
+                writer = csv.writer(f)
 
-                writer.writeheader()
+                writer.writerow([
+                    "timestamp",
+                    "symbol",
+                    "buy_exchange",
+                    "sell_exchange",
+                    "capital",
+                    "buy_price",
+                    "sell_price",
+                    "raw_margin_pct",
+                    "net_profit_pct",
+                    "profit_usdt",
+                    "status"
+                ])
 
-        if not os.path.exists(
-            self.chancen_csv_file
-        ):
+        if not os.path.exists(self.chancen_csv_file):
 
             with open(
                 self.chancen_csv_file,
@@ -205,22 +155,17 @@ class MultiExchangeTrader:
                 encoding="utf-8"
             ) as f:
 
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "timestamp",
-                        "symbol",
-                        "buy_ex",
-                        "sell_ex",
-                        "ask_buy",
-                        "bid_sell",
-                        "raw_margin_pct",
-                        "estimated_net_pct",
-                        "reason"
-                    ]
-                )
+                writer = csv.writer(f)
 
-                writer.writeheader()
+                writer.writerow([
+                    "timestamp",
+                    "symbol",
+                    "buy_exchange",
+                    "sell_exchange",
+                    "raw_margin_pct",
+                    "estimated_net_pct",
+                    "reason"
+                ])
 
     # =========================================================
     # CHANCE LOG
@@ -231,114 +176,31 @@ class MultiExchangeTrader:
         symbol,
         buy_ex,
         sell_ex,
-        ask_buy,
-        bid_sell,
         raw_margin,
         estimated_net,
         reason
     ):
 
-        try:
+        with open(
+            self.chancen_csv_file,
+            "a",
+            newline="",
+            encoding="utf-8"
+        ) as f:
 
-            with open(
-                self.chancen_csv_file,
-                "a",
-                newline="",
-                encoding="utf-8"
-            ) as f:
+            writer = csv.writer(f)
 
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "timestamp",
-                        "symbol",
-                        "buy_ex",
-                        "sell_ex",
-                        "ask_buy",
-                        "bid_sell",
-                        "raw_margin_pct",
-                        "estimated_net_pct",
-                        "reason"
-                    ]
-                )
-
-                writer.writerow({
-                    "timestamp":
-                        time.strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-
-                    "symbol":
-                        symbol,
-
-                    "buy_ex":
-                        buy_ex.upper(),
-
-                    "sell_ex":
-                        sell_ex.upper(),
-
-                    "ask_buy":
-                        ask_buy,
-
-                    "bid_sell":
-                        bid_sell,
-
-                    "raw_margin_pct":
-                        round(
-                            raw_margin,
-                            4
-                        ),
-
-                    "estimated_net_pct":
-                        round(
-                            estimated_net,
-                            4
-                        ),
-
-                    "reason":
-                        reason
-                })
-
-        except Exception as e:
-
-            print(
-                f"⚠️ CSV-Fehler: {e}"
-            )
-
-    # =========================================================
-    # DUPLIKAT-SCHUTZ
-    # =========================================================
-
-    def is_duplicate_trade(
-        self,
-        symbol,
-        buy_ex,
-        sell_ex
-    ):
-
-        key = (
-            f"{symbol}|"
-            f"{buy_ex}|"
-            f"{sell_ex}"
-        )
-
-        now = time.time()
-
-        last_time = self.recent_trades.get(
-            key,
-            0
-        )
-
-        if (
-            now - last_time
-            < self.trade_cooldown
-        ):
-
-            return True
-
-        self.recent_trades[key] = now
-
-        return False
+            writer.writerow([
+                time.strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                symbol,
+                buy_ex.upper(),
+                sell_ex.upper(),
+                round(raw_margin, 5),
+                round(estimated_net, 5),
+                reason
+            ])
 
     # =========================================================
     # BUY ORDERBOOK
@@ -352,7 +214,7 @@ class MultiExchangeTrader:
 
         remaining_usdt = usdt_amount
         coin_amount = 0.0
-        spent_usdt = 0.0
+        spent = 0.0
 
         for level in asks:
 
@@ -365,56 +227,39 @@ class MultiExchangeTrader:
             if price <= 0 or quantity <= 0:
                 continue
 
-            level_value = (
+            available_value = (
                 price * quantity
             )
 
-            if (
-                level_value
-                <= remaining_usdt
-            ):
-
-                buy_quantity = quantity
-
-            else:
-
-                buy_quantity = (
-                    remaining_usdt
-                    / price
-                )
+            buy_quantity = min(
+                quantity,
+                remaining_usdt / price
+            )
 
             cost = (
-                buy_quantity
-                * price
+                buy_quantity * price
             )
 
             coin_amount += buy_quantity
-            spent_usdt += cost
+            spent += cost
             remaining_usdt -= cost
 
             if remaining_usdt <= 0.00000001:
                 break
 
-        if (
-            spent_usdt
-            < usdt_amount * 0.999
-        ):
+        if spent < usdt_amount * 0.999:
 
             return None
 
         if coin_amount <= 0:
+
             return None
 
         return {
-            "coin_amount":
-                coin_amount,
-
-            "spent_usdt":
-                spent_usdt,
-
+            "coin_amount": coin_amount,
+            "spent": spent,
             "average_price":
-                spent_usdt
-                / coin_amount
+                spent / coin_amount
         }
 
     # =========================================================
@@ -428,8 +273,8 @@ class MultiExchangeTrader:
     ):
 
         remaining_coin = coin_amount
-        received_usdt = 0.0
-        sold_coin = 0.0
+        received = 0.0
+        sold = 0.0
 
         for level in bids:
 
@@ -447,41 +292,28 @@ class MultiExchangeTrader:
                 quantity
             )
 
-            received_usdt += (
-                sell_quantity
-                * price
+            received += (
+                sell_quantity * price
             )
 
-            sold_coin += sell_quantity
+            sold += sell_quantity
+            remaining_coin -= sell_quantity
 
-            remaining_coin -= (
-                sell_quantity
-            )
-
-            if (
-                remaining_coin
-                <= 0.00000001
-            ):
-
+            if remaining_coin <= 0.00000001:
                 break
 
-        if (
-            sold_coin
-            < coin_amount * 0.999
-        ):
+        if sold < coin_amount * 0.999:
 
             return None
 
-        if sold_coin <= 0:
+        if sold <= 0:
+
             return None
 
         return {
-            "received_usdt":
-                received_usdt,
-
+            "received": received,
             "average_price":
-                received_usdt
-                / sold_coin
+                received / sold
         }
 
     # =========================================================
@@ -499,68 +331,43 @@ class MultiExchangeTrader:
 
         try:
 
-            ask_buy = ticker_buy.get(
-                "ask"
-            )
+            ask = ticker_buy.get("ask")
+            bid = ticker_sell.get("bid")
 
-            bid_sell = ticker_sell.get(
-                "bid"
-            )
-
-            if not ask_buy or not bid_sell:
+            if not ask or not bid:
                 return
 
-            ask_buy = float(
-                ask_buy
-            )
+            ask = float(ask)
+            bid = float(bid)
 
-            bid_sell = float(
-                bid_sell
-            )
-
-            if (
-                ask_buy <= 0
-                or bid_sell <= 0
-            ):
+            if ask <= 0 or bid <= 0:
                 return
 
-            # -------------------------------------------------
-            # TICKER MARGE
-            # -------------------------------------------------
+            # =================================================
+            # TICKER SPREAD
+            # =================================================
 
             raw_margin = (
-                (
-                    bid_sell
-                    - ask_buy
-                )
-                / ask_buy
+                (bid - ask)
+                / ask
             ) * 100
 
             if raw_margin <= 0:
                 return
 
-            # -------------------------------------------------
-            # XTER-SCHUTZ
-            # -------------------------------------------------
-
-            if (
-                raw_margin
-                > self.max_raw_margin_pct
-            ):
+            # Schutz gegen XTER-Fehler
+            if raw_margin > self.max_raw_margin_pct:
 
                 print(
                     f"🛑 [{symbol}] "
-                    f"Ungültige Preisdifferenz "
-                    f"+{raw_margin:.3f}% "
-                    f"→ VERWORFEN"
+                    f"Ungültiger Spread "
+                    f"+{raw_margin:.2f}%"
                 )
 
                 self.log_chance(
                     symbol,
                     buy_ex_name,
                     sell_ex_name,
-                    ask_buy,
-                    bid_sell,
                     raw_margin,
                     0,
                     "INVALID_SPREAD"
@@ -568,26 +375,24 @@ class MultiExchangeTrader:
 
                 return
 
-            # -------------------------------------------------
+            # =================================================
             # GEBÜHREN
-            # -------------------------------------------------
+            # =================================================
 
-            fee_buy = self.exchanges[
+            fee_buy = self.fees[
                 buy_ex_name
-            ]["fee"]
+            ]
 
-            fee_sell = self.exchanges[
+            fee_sell = self.fees[
                 sell_ex_name
-            ]["fee"]
-
-            total_fee_pct = (
-                fee_buy
-                + fee_sell
-            ) * 100
+            ]
 
             estimated_net = (
                 raw_margin
-                - total_fee_pct
+                - (
+                    fee_buy
+                    + fee_sell
+                ) * 100
             )
 
             if raw_margin >= 0.05:
@@ -595,76 +400,60 @@ class MultiExchangeTrader:
                 print(
                     f"👀 {symbol} "
                     f"({buy_ex_name.upper()} "
-                    f"-> "
-                    f"{sell_ex_name.upper()}): "
-                    f"Ticker-Brutto "
+                    f"-> {sell_ex_name.upper()}): "
+                    f"Brutto "
                     f"+{raw_margin:.3f}% | "
-                    f"geschätzt Netto "
+                    f"Netto geschätzt "
                     f"{estimated_net:+.3f}%"
                 )
 
-            # -------------------------------------------------
-            # MINDESTGEWINN
-            # -------------------------------------------------
+            if estimated_net < self.min_profit_pct:
+
+                self.log_chance(
+                    symbol,
+                    buy_ex_name,
+                    sell_ex_name,
+                    raw_margin,
+                    estimated_net,
+                    "BELOW_MIN_PROFIT"
+                )
+
+                return
+
+            # =================================================
+            # KAPITALPRÜFUNG
+            # =================================================
 
             if (
-                estimated_net
-                < self.min_profit_pct
+                self.balances[
+                    buy_ex_name
+                ]["usdt"]
+                < self.amount
             ):
 
                 return
 
-            # -------------------------------------------------
-            # KAPITALPRÜFUNG
-            # -------------------------------------------------
-
-            if self.dry_run:
-
-                if (
-                    self.paper_balance
-                    < self.amount
-                ):
-
-                    print(
-                        "⚠️ Nicht genügend "
-                        "Paper-Kapital."
-                    )
-
-                    return
-
-            # -------------------------------------------------
-            # DUPLIKAT-SCHUTZ
-            # -------------------------------------------------
-
-            if self.is_duplicate_trade(
-                symbol,
-                buy_ex_name,
-                sell_ex_name
-            ):
-
-                return
-
-            # -------------------------------------------------
+            # =================================================
             # ORDERBOOK
-            # -------------------------------------------------
+            # =================================================
 
-            buy_ex = self.exchanges[
+            buy_exchange = self.exchanges[
                 buy_ex_name
             ]["instance"]
 
-            sell_ex = self.exchanges[
+            sell_exchange = self.exchanges[
                 sell_ex_name
             ]["instance"]
 
             ob_buy = (
-                buy_ex.fetch_order_book(
+                buy_exchange.fetch_order_book(
                     symbol,
                     limit=self.orderbook_limit
                 )
             )
 
             ob_sell = (
-                sell_ex.fetch_order_book(
+                sell_exchange.fetch_order_book(
                     symbol,
                     limit=self.orderbook_limit
                 )
@@ -677,162 +466,144 @@ class MultiExchangeTrader:
 
                 return
 
-            real_buy_price = float(
+            # =================================================
+            # ORDERBOOK SPREAD
+            # =================================================
+
+            buy_price = float(
                 ob_buy["asks"][0][0]
             )
 
-            real_sell_price = float(
+            sell_price = float(
                 ob_sell["bids"][0][0]
             )
 
-            # -------------------------------------------------
-            # ORDERBOOK MARGE
-            # -------------------------------------------------
-
-            real_raw_margin = (
-                (
-                    real_sell_price
-                    - real_buy_price
-                )
-                / real_buy_price
+            orderbook_margin = (
+                (sell_price - buy_price)
+                / buy_price
             ) * 100
 
             if (
-                real_raw_margin <= 0
-                or
-                real_raw_margin
+                orderbook_margin <= 0
+                or orderbook_margin
                 > self.max_raw_margin_pct
             ):
 
                 return
 
-            # -------------------------------------------------
-            # BUY SIMULATION
-            # -------------------------------------------------
+            # =================================================
+            # REALISTISCHER BUY
+            # =================================================
 
-            buy_result = (
-                self.simulate_buy(
-                    ob_buy["asks"],
-                    self.amount
-                )
+            buy_result = self.simulate_buy(
+                ob_buy["asks"],
+                self.amount
             )
 
             if not buy_result:
 
+                self.log_chance(
+                    symbol,
+                    buy_ex_name,
+                    sell_ex_name,
+                    orderbook_margin,
+                    0,
+                    "BUY_LIQUIDITY"
+                )
+
                 return
 
-            coin_amount = (
+            # Handelsgebühr beim Kauf
+            coin_after_buy_fee = (
                 buy_result["coin_amount"]
                 * (1 - fee_buy)
             )
 
-            # -------------------------------------------------
-            # SELL SIMULATION
-            # -------------------------------------------------
+            # =================================================
+            # REALISTISCHER SELL
+            # =================================================
 
-            sell_result = (
-                self.simulate_sell(
-                    ob_sell["bids"],
-                    coin_amount
-                )
+            sell_result = self.simulate_sell(
+                ob_sell["bids"],
+                coin_after_buy_fee
             )
 
             if not sell_result:
 
+                self.log_chance(
+                    symbol,
+                    buy_ex_name,
+                    sell_ex_name,
+                    orderbook_margin,
+                    0,
+                    "SELL_LIQUIDITY"
+                )
+
                 return
 
+            # Verkaufsgebühr
             final_usdt = (
-                sell_result[
-                    "received_usdt"
-                ]
+                sell_result["received"]
                 * (1 - fee_sell)
             )
 
-            # -------------------------------------------------
-            # NETTO
-            # -------------------------------------------------
+            # =================================================
+            # GEWINN
+            # =================================================
 
-            profit_usdt = (
+            profit = (
                 final_usdt
                 - self.amount
             )
 
-            real_profit_pct = (
-                profit_usdt
+            profit_pct = (
+                profit
                 / self.amount
             ) * 100
 
-            # -------------------------------------------------
-            # SICHERHEIT
-            # -------------------------------------------------
-
-            if (
-                real_profit_pct
-                > self.max_raw_margin_pct
-            ):
-
-                print(
-                    f"🛑 [{symbol}] "
-                    f"Unplausibler Gewinn "
-                    f"+{real_profit_pct:.3f}% "
-                    f"→ VERWORFEN"
-                )
-
-                return
-
-            if (
-                real_profit_pct
-                < self.min_profit_pct
-            ):
+            # Schutz
+            if profit_pct > self.max_raw_margin_pct:
 
                 return
 
             # =================================================
-            # PAPER TRADE
+            # NICHT PROFITABEL
             # =================================================
 
-            mode_str = (
-                "PAPER_TRADING"
-                if self.dry_run
-                else "LIVE_REAL_MONEY"
-            )
+            if profit_pct < self.min_profit_pct:
 
-            # Kapital aktualisieren
-            if self.dry_run:
-
-                self.paper_balance += (
-                    profit_usdt
+                self.log_chance(
+                    symbol,
+                    buy_ex_name,
+                    sell_ex_name,
+                    orderbook_margin,
+                    profit_pct,
+                    "ORDERBOOK_BELOW_MIN"
                 )
+
+                return
+
+            # =================================================
+            # VIRTUELLER KAPITALFLUSS
+            # =================================================
+
+            # Kaufbörse verliert USDT
+            self.balances[
+                buy_ex_name
+            ]["usdt"] -= self.amount
+
+            # Verkaufsbörse erhält USDT
+            self.balances[
+                sell_ex_name
+            ]["usdt"] += final_usdt
+
+            # Gewinn
+            self.total_profit += profit
 
             self.total_trades += 1
+            self.winning_trades += 1
 
-            self.total_profit += (
-                profit_usdt
-            )
-
-            if profit_usdt > 0:
-
-                self.profitable_trades += 1
-
-            if (
-                profit_usdt
-                > self.best_trade_profit
-            ):
-
-                self.best_trade_profit = (
-                    profit_usdt
-                )
-
-            if (
-                self.total_trades == 1
-                or
-                profit_usdt
-                < self.worst_trade_profit
-            ):
-
-                self.worst_trade_profit = (
-                    profit_usdt
-                )
+            self.profits.append(profit)
 
             # =================================================
             # AUSGABE
@@ -842,7 +613,7 @@ class MultiExchangeTrader:
             print("=" * 70)
 
             print(
-                f"🔥 [PAPER-TRADE] "
+                f"🔥 [PAPER TRADE #{self.total_trades}] "
                 f"{symbol}"
             )
 
@@ -853,37 +624,38 @@ class MultiExchangeTrader:
             )
 
             print(
-                f"Orderbook BUY: "
+                f"💰 Einsatz: "
+                f"${self.amount:.2f}"
+            )
+
+            print(
+                f"📚 BUY Ø: "
                 f"{buy_result['average_price']:.8f}"
             )
 
             print(
-                f"Orderbook SELL: "
+                f"📚 SELL Ø: "
                 f"{sell_result['average_price']:.8f}"
             )
 
             print(
-                f"Netto: "
-                f"{real_profit_pct:+.4f}%"
+                f"📈 Netto: "
+                f"+{profit_pct:.4f}%"
             )
 
             print(
-                f"Gewinn: "
-                f"${profit_usdt:+.6f}"
+                f"💵 Gewinn: "
+                f"+${profit:.6f}"
             )
 
             print(
-                f"Paper-Kapital: "
-                f"${self.paper_balance:,.4f}"
+                f"🏦 {buy_ex_name.upper()} USDT: "
+                f"${self.balances[buy_ex_name]['usdt']:.2f}"
             )
 
             print(
-                f"Trade #{self.total_trades}"
-            )
-
-            print(
-                f"Modus: "
-                f"{mode_str}"
+                f"🏦 {sell_ex_name.upper()} USDT: "
+                f"${self.balances[sell_ex_name]['usdt']:.2f}"
             )
 
             print("=" * 70)
@@ -892,215 +664,56 @@ class MultiExchangeTrader:
             # CSV
             # =================================================
 
-            try:
+            with open(
+                self.csv_file,
+                "a",
+                newline="",
+                encoding="utf-8"
+            ) as f:
 
-                with open(
-                    self.csv_file,
-                    "a",
-                    newline="",
-                    encoding="utf-8"
-                ) as f:
+                writer = csv.writer(f)
 
-                    writer = csv.DictWriter(
-                        f,
-                        fieldnames=[
-                            "timestamp",
-                            "symbol",
-                            "buy_ex",
-                            "sell_ex",
-                            "buy_price",
-                            "sell_price",
-                            "raw_margin_pct",
-                            "real_profit_pct",
-                            "profit_usd",
-                            "paper_balance",
-                            "execution_mode",
-                            "status"
-                        ]
-                    )
-
-                    writer.writerow({
-                        "timestamp":
-                            time.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-
-                        "symbol":
-                            symbol,
-
-                        "buy_ex":
-                            buy_ex_name.upper(),
-
-                        "sell_ex":
-                            sell_ex_name.upper(),
-
-                        "buy_price":
-                            round(
-                                buy_result[
-                                    "average_price"
-                                ],
-                                10
-                            ),
-
-                        "sell_price":
-                            round(
-                                sell_result[
-                                    "average_price"
-                                ],
-                                10
-                            ),
-
-                        "raw_margin_pct":
-                            round(
-                                real_raw_margin,
-                                4
-                            ),
-
-                        "real_profit_pct":
-                            round(
-                                real_profit_pct,
-                                4
-                            ),
-
-                        "profit_usd":
-                            round(
-                                profit_usdt,
-                                6
-                            ),
-
-                        "paper_balance":
-                            round(
-                                self.paper_balance,
-                                6
-                            ),
-
-                        "execution_mode":
-                            mode_str,
-
-                        "status":
-                            "PAPER_EXECUTED"
-                    })
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ Fehler beim "
-                    f"Schreiben der CSV: {e}"
-                )
+                writer.writerow([
+                    time.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    symbol,
+                    buy_ex_name.upper(),
+                    sell_ex_name.upper(),
+                    round(self.amount, 4),
+                    round(
+                        buy_result["average_price"],
+                        10
+                    ),
+                    round(
+                        sell_result["average_price"],
+                        10
+                    ),
+                    round(
+                        orderbook_margin,
+                        5
+                    ),
+                    round(
+                        profit_pct,
+                        5
+                    ),
+                    round(
+                        profit,
+                        6
+                    ),
+                    "PAPER_TRADING_V2"
+                ])
 
         except Exception as e:
 
             print(
-                f"⚠️ Fehler bei "
-                f"{symbol} "
-                f"({buy_ex_name}"
-                f"->{sell_ex_name}): "
+                f"⚠️ Fehler bei {symbol} "
+                f"({buy_ex_name}->{sell_ex_name}): "
                 f"{type(e).__name__}: {e}"
             )
 
     # =========================================================
-    # STATISTIK
-    # =========================================================
-
-    def print_statistics(
-        self,
-        start_time
-    ):
-
-        runtime = (
-            time.time()
-            - start_time
-        )
-
-        return_pct = (
-            (
-                self.paper_balance
-                - self.starting_balance
-            )
-            / self.starting_balance
-        ) * 100
-
-        if self.total_trades > 0:
-
-            avg_profit = (
-                self.total_profit
-                / self.total_trades
-            )
-
-            hit_rate = (
-                self.profitable_trades
-                / self.total_trades
-            ) * 100
-
-        else:
-
-            avg_profit = 0.0
-            hit_rate = 0.0
-
-        print("")
-        print("=" * 70)
-        print("🏁 PAPER-TESTLAUF BEENDET")
-        print("=" * 70)
-
-        print(
-            f"💰 Startkapital: "
-            f"${self.starting_balance:,.2f}"
-        )
-
-        print(
-            f"💰 Endkapital:   "
-            f"${self.paper_balance:,.4f}"
-        )
-
-        print(
-            f"📈 Gesamtgewinn: "
-            f"${self.total_profit:+,.4f}"
-        )
-
-        print(
-            f"📊 Rendite:      "
-            f"{return_pct:+.4f}%"
-        )
-
-        print(
-            f"🔥 Trades:       "
-            f"{self.total_trades}"
-        )
-
-        print(
-            f"✅ Gewinntrades: "
-            f"{self.profitable_trades}"
-        )
-
-        print(
-            f"🎯 Trefferquote: "
-            f"{hit_rate:.2f}%"
-        )
-
-        print(
-            f"💵 Ø Gewinn/Trade: "
-            f"${avg_profit:+.6f}"
-        )
-
-        print(
-            f"🚀 Bester Trade: "
-            f"${self.best_trade_profit:+.6f}"
-        )
-
-        print(
-            f"📉 Schlechtester Trade: "
-            f"${self.worst_trade_profit:+.6f}"
-        )
-
-        print(
-            f"⏱️ Laufzeit: "
-            f"{runtime / 60:.2f} Minuten"
-        )
-
-        print("=" * 70)
-
-    # =========================================================
-    # HAUPTSCHLEIFE
+    # RUN
     # =========================================================
 
     def run_continuous(
@@ -1111,17 +724,16 @@ class MultiExchangeTrader:
 
         print("")
         print(
-            "🚀 Starte Trader "
-            "[PAPERHANDEL (SIMULATION)]..."
+            "🚀 PAPER TRADER V2 STARTET"
         )
 
         print(
-            f"💰 Startkapital: "
-            f"${self.starting_balance:.2f}"
+            f"💰 Startkapital je Börse: "
+            f"${self.starting_capital:.2f}"
         )
 
         print(
-            f"💵 Handelsgröße: "
+            f"💵 Tradegröße: "
             f"${self.amount:.2f}"
         )
 
@@ -1136,30 +748,21 @@ class MultiExchangeTrader:
         )
 
         print(
-            f"🛡️ Max. Spread: "
-            f"{self.max_raw_margin_pct:.1f}%"
-        )
-
-        print(
-            f"🔒 Trade-Cooldown: "
-            f"{self.trade_cooldown}s"
+            "🛡️ Echtgeld: DEAKTIVIERT"
         )
 
         print(
             f"⏱️ Laufzeit: "
-            f"{duration_hours} Stunde(n) "
-            f"| Pause: {delay_seconds}s"
+            f"{duration_hours} Stunde(n)"
         )
 
         print("")
 
-        # -----------------------------------------------------
+        # =====================================================
         # MARKETS
-        # -----------------------------------------------------
+        # =====================================================
 
-        for name, data in list(
-            self.exchanges.items()
-        ):
+        for name, data in self.exchanges.items():
 
             try:
 
@@ -1174,44 +777,37 @@ class MultiExchangeTrader:
             except Exception as e:
 
                 print(
-                    f"⚠️ Märkte konnten für "
-                    f"{name.upper()} nicht "
-                    f"geladen werden: {e}"
+                    f"⚠️ Marktfehler "
+                    f"{name.upper()}: {e}"
                 )
 
-        # -----------------------------------------------------
-        # START
-        # -----------------------------------------------------
+        # =====================================================
+        # TIMER
+        # =====================================================
 
-        start_time = time.time()
+        start = time.time()
 
-        end_time = (
-            start_time
+        end = (
+            start
             + duration_hours * 3600
         )
 
         cycle = 1
 
-        # -----------------------------------------------------
+        # =====================================================
         # LOOP
-        # -----------------------------------------------------
+        # =====================================================
 
-        while time.time() < end_time:
+        while time.time() < end:
 
-            elapsed_min = int(
-                (
-                    time.time()
-                    - start_time
-                ) / 60
+            elapsed = int(
+                (time.time() - start)
+                / 60
             )
 
             print(
-                f"\n🔄 Scan-Zyklus "
-                f"{cycle} | "
-                f"Verstrichene Zeit: "
-                f"{elapsed_min} Min. | "
-                f"Paper-Kapital: "
-                f"${self.paper_balance:.4f}"
+                f"\n🔄 Scan-Zyklus {cycle} | "
+                f"{elapsed} Min."
             )
 
             active = list(
@@ -1235,67 +831,52 @@ class MultiExchangeTrader:
                     try:
 
                         t1 = (
-                            self.exchanges[
-                                ex1
-                            ]["instance"]
+                            self.exchanges[ex1]
+                            ["instance"]
                             .fetch_tickers()
                         )
 
                         t2 = (
-                            self.exchanges[
-                                ex2
-                            ]["instance"]
+                            self.exchanges[ex2]
+                            ["instance"]
                             .fetch_tickers()
                         )
 
-                        s1 = {
-                            s
-                            for s in t1.keys()
-                            if s.endswith(
-                                "/USDT"
-                            )
-                        }
-
-                        s2 = {
-                            s
-                            for s in t2.keys()
-                            if s.endswith(
-                                "/USDT"
-                            )
-                        }
-
                         common = (
-                            s1.intersection(s2)
+                            set(t1.keys())
+                            & set(t2.keys())
                         )
 
+                        common = [
+                            s
+                            for s in common
+                            if s.endswith(
+                                "/USDT"
+                            )
+                        ]
+
                         for symbol in common:
-
-                            ticker1 = t1.get(
-                                symbol,
-                                {}
-                            )
-
-                            ticker2 = t2.get(
-                                symbol,
-                                {}
-                            )
 
                             self.execute_arbitrage(
                                 symbol,
                                 ex1,
                                 ex2,
-                                ticker1,
-                                ticker2
+                                t1.get(
+                                    symbol,
+                                    {}
+                                ),
+                                t2.get(
+                                    symbol,
+                                    {}
+                                )
                             )
 
                     except Exception as e:
 
                         print(
-                            f"⚠️ Fehler beim "
-                            f"Pair-Fetch "
-                            f"({ex1}-{ex2}): "
-                            f"{type(e).__name__}: "
-                            f"{e}"
+                            f"⚠️ Fetch-Fehler "
+                            f"{ex1}->{ex2}: "
+                            f"{type(e).__name__}: {e}"
                         )
 
             cycle += 1
@@ -1304,13 +885,104 @@ class MultiExchangeTrader:
                 delay_seconds
             )
 
-        # -----------------------------------------------------
-        # ENDERGEBNIS
-        # -----------------------------------------------------
+        # =====================================================
+        # ABSCHLUSS
+        # =====================================================
 
-        self.print_statistics(
-            start_time
+        total_capital = (
+            self.balances["okx"]["usdt"]
+            + self.balances["kucoin"]["usdt"]
         )
+
+        initial_total = (
+            self.starting_capital * 2
+        )
+
+        total_profit = (
+            total_capital
+            - initial_total
+        )
+
+        return_pct = (
+            total_profit
+            / initial_total
+        ) * 100
+
+        print("")
+        print("=" * 70)
+        print(
+            "🏁 PAPER-TEST V2 BEENDET"
+        )
+        print("=" * 70)
+
+        print(
+            f"💰 Startkapital gesamt: "
+            f"${initial_total:,.4f}"
+        )
+
+        print(
+            f"💰 Endkapital gesamt: "
+            f"${total_capital:,.4f}"
+        )
+
+        print(
+            f"📈 Gesamtgewinn: "
+            f"${total_profit:+,.4f}"
+        )
+
+        print(
+            f"📊 Rendite: "
+            f"{return_pct:+.4f}%"
+        )
+
+        print(
+            f"🔥 Trades: "
+            f"{self.total_trades}"
+        )
+
+        print(
+            f"✅ Gewinntrades: "
+            f"{self.winning_trades}"
+        )
+
+        print(
+            f"❌ Verlusttrades: "
+            f"{self.losing_trades}"
+        )
+
+        if self.profits:
+
+            avg_profit = (
+                sum(self.profits)
+                / len(self.profits)
+            )
+
+            print(
+                f"💵 Ø Gewinn/Trade: "
+                f"${avg_profit:+.6f}"
+            )
+
+            print(
+                f"🚀 Bester Trade: "
+                f"${max(self.profits):+.6f}"
+            )
+
+            print(
+                f"📉 Schlechtester Trade: "
+                f"${min(self.profits):+.6f}"
+            )
+
+        print(
+            f"🏦 OKX USDT: "
+            f"${self.balances['okx']['usdt']:.4f}"
+        )
+
+        print(
+            f"🏦 KuCoin USDT: "
+            f"${self.balances['kucoin']['usdt']:.4f}"
+        )
+
+        print("=" * 70)
 
 
 # =============================================================
@@ -1320,19 +992,13 @@ class MultiExchangeTrader:
 if __name__ == "__main__":
 
     trader = MultiExchangeTrader(
-
-        amount_per_trade=10.0,
-
-        starting_balance=1000.0,
-
+        starting_capital=1000.0,
+        amount_per_trade=1000.0,
         min_profit_pct=0.10,
-
         dry_run=True
     )
 
     trader.run_continuous(
-
         duration_hours=1,
-
         delay_seconds=2
-    )
+    ) 
