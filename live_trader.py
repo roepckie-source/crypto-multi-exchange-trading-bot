@@ -5,14 +5,12 @@ import ccxt
 
 class MultiExchangeLiveTrader:
     def __init__(self, amount_per_trade=10.0, min_profit_pct=0.10, dry_run=True):
-        self.amount = amount_per_trade          # Einsatz pro Trade in USDT
-        self.min_profit_pct = min_profit_pct    # Mindestgewinn in %
-        self.max_profit_pct = 5.0              # Safety-Cap gegen Ausreißer/Fake-Daten
-        self.dry_run = dry_run                  # Safety Toggle: True = Dry Run
+        self.amount = amount_per_trade
+        self.min_profit_pct = min_profit_pct
+        self.max_profit_pct = 5.0
+        self.dry_run = dry_run
         
         self.csv_file = "live_dry_run_results.csv"
-
-        # Dynamische Einbindung von OKX, KuCoin und MEXC
         self.exchanges = {}
 
         # 1. OKX Setup
@@ -28,29 +26,17 @@ class MultiExchangeLiveTrader:
                 'fee': 0.001
             }
 
-        # 2. KuCoin Setup
-        kucoin_key = os.getenv('KUCOIN_API_KEY', '')
-        if kucoin_key:
-            self.exchanges['kucoin'] = {
-                'instance': ccxt.kucoin({
-                    'apiKey': kucoin_key,
-                    'secret': os.getenv('KUCOIN_API_SECRET', ''),
-                    'password': os.getenv('KUCOIN_PASSPRASE', ''),
+        # 2. Bitget Setup
+        bitget_key = os.getenv('BITGET_API_KEY', '')
+        if bitget_key:
+            self.exchanges['bitget'] = {
+                'instance': ccxt.bitget({
+                    'apiKey': bitget_key,
+                    'secret': os.getenv('BITGET_API_SECRET', ''),
+                    'password': os.getenv('BITGET_PASSPRASE', ''),
                     'enableRateLimit': True,
                 }),
                 'fee': 0.001
-            }
-
-        # 3. MEXC Setup
-        mexc_key = os.getenv('MEXC_API_KEY', '')
-        if mexc_key:
-            self.exchanges['mexc'] = {
-                'instance': ccxt.mexc({
-                    'apiKey': mexc_key,
-                    'secret': os.getenv('MEXC_API_SECRET', ''),
-                    'enableRateLimit': True,
-                }),
-                'fee': 0.0005
             }
 
         self.init_csv()
@@ -65,7 +51,6 @@ class MultiExchangeLiveTrader:
             writer.writeheader()
 
     def check_exchange_limits(self, exchange_name, symbol, amount_usdt, price):
-        """ Prüft Mindestauftragswerte der jeweiligen Börse """
         try:
             ex = self.exchanges[exchange_name]['instance']
             market = ex.market(symbol)
@@ -166,7 +151,7 @@ class MultiExchangeLiveTrader:
                 "status": status
             })
 
-    def run(self, cycles=10):
+    def run(self, cycles=5):
         active_names = list(self.exchanges.keys())
         print(f"🚀 Starte LIVE-Trader [DRY RUN] über Börsen: {', '.join([n.upper() for n in active_names])}...")
         
@@ -179,7 +164,6 @@ class MultiExchangeLiveTrader:
         for cycle in range(1, cycles + 1):
             print(f"🔄 Scan-Zyklus {cycle}/{cycles}...")
             
-            # Alle Kombinationen vergleichen
             for i in range(len(active_names)):
                 for j in range(len(active_names)):
                     if i != j:
