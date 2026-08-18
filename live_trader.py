@@ -5,15 +5,15 @@ import ccxt
 
 class MultiExchangeLiveTrader:
     def __init__(self, amount_per_trade=10.0, min_profit_pct=0.10, dry_run=True):
-        self.amount = amount_per_trade
-        self.min_profit_pct = min_profit_pct
-        self.max_profit_pct = 5.0
-        self.dry_run = dry_run
+        self.amount = amount_per_trade          # Einsatz pro Trade in USDT
+        self.min_profit_pct = min_profit_pct    # Mindestgewinn in %
+        self.max_profit_pct = 5.0              # Safety-Cap gegen Ausreißer/Fake-Daten
+        self.dry_run = dry_run                  # Safety Toggle: True = Dry Run
         
         self.csv_file = "live_dry_run_results.csv"
         self.exchanges = {}
 
-        # 1. OKX Setup
+        # 1. OKX Setup (mit EU-API-Domain Anbindung)
         okx_key = os.getenv('OKX_API_KEY', '')
         if okx_key:
             self.exchanges['okx'] = {
@@ -22,6 +22,7 @@ class MultiExchangeLiveTrader:
                     'secret': os.getenv('OKX_API_SECRET', ''),
                     'password': os.getenv('OKX_PASSPRASE', ''),
                     'enableRateLimit': True,
+                    'hostname': 'eea.okx.com',  # EU/EEA-Domain für europäische Konten
                 }),
                 'fee': 0.001
             }
@@ -51,6 +52,7 @@ class MultiExchangeLiveTrader:
             writer.writeheader()
 
     def check_exchange_limits(self, exchange_name, symbol, amount_usdt, price):
+        """ Prüft Mindestauftragswerte der jeweiligen Börse """
         try:
             ex = self.exchanges[exchange_name]['instance']
             market = ex.market(symbol)
