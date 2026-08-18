@@ -26,9 +26,9 @@ jobs:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPRASE: ${{ secrets.OKX_PASSPRASE }}
-          KUCOIN_API_KEY: ${{ secrets.KUCOIN_API_KEY }}
-          KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }}
-          KUCOIN_PASSPRASE: ${{ secrets.KUCOIN_PASSPRASE }}
+          BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+          BITGET_API_SECRET: ${{ secrets.BITGET_API_SECRET }}
+          BITGET_PASSPRASE: ${{ secrets.BITGET_PASSPRASE }}
         run: |
           python live_trader.py
 
