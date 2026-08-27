@@ -1,25 +1,30 @@
+import csv
 import os
 import time
-import csv
 import ccxt
 
 
 class LiveArbitrageTrader:
+
     def __init__(self, fixed_trade_amount=10.0, min_profit_pct=0.15):
-        self.fixed_trade_amount = float(fixed_trade_amount)  # Max $10 pro Trade
-        self.min_profit_pct = float(min_profit_pct)  # Mindestgewinn nach Gebühren
-        self.max_raw_margin_pct = 1.5  # Obergrenze gegen illiquide Ausreißer
+        self.fixed_trade_amount = float(fixed_trade_amount)
+        self.min_profit_pct = float(min_profit_pct)
+        self.max_raw_margin_pct = 1.5
         self.orderbook_limit = 20
 
-        # 🎯 Whitelist der Paare (OKX & BITRUE)
         self.whitelist = {
-            "MIN/USDT", "NES/USDT", "PRO/USDT", "USTC/USDT", "SAND/USDT",
-            "RVN/USDT", "PEPE/USDT", "LUNG/USDT", "VELO/USDT", "JASMY/USDT",
-            "MIN/USD", "NES/USD", "PRO/USD", "USTC/USD", "SAND/USD",
-            "RVN/USD", "PEPE/USD", "LUNG/USD", "VELO/USD", "JASMY/USD",
+            "MIN/USDT",
+            "NES/USDT",
+            "PRO/USDT",
+            "USTC/USDT",
+            "SAND/USDT",
+            "RVN/USDT",
+            "PEPE/USDT",
+            "LUNG/USDT",
+            "VELO/USDT",
+            "JASMY/USDT",
         }
 
-        # Spot-Taker-Gebührenstrukturen
         self.exchange_fees = {
             "okx": 0.0010,
             "bitrue": 0.0020,
@@ -28,8 +33,11 @@ class LiveArbitrageTrader:
         self.csv_file = "live_trading_results_real.csv"
         self.exchanges = {}
 
-        print("🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX & BITRUE)...")
-        # KuCoin wurde hier entfernt, um das US-Geoblocking auf GitHub Actions zu vermeiden
+        print(
+            "🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX &"
+            " BITRUE)..."
+        )
+
         for ex_name, ex_class in [
             ("okx", ccxt.okx),
             ("bitrue", ccxt.bitrue),
@@ -41,15 +49,20 @@ class LiveArbitrageTrader:
 
                 config = {
                     "enableRateLimit": True,
-                    "timeout": 10000,
+                    "timeout": 8000,
                     "options": {"defaultType": "spot"},
                     "apiKey": api_key,
                     "secret": secret,
-                    "password": password,  # OKX benötigt dies zwingend für V5 Auth
                 }
-               
+
                 if password:
                     config["password"] = password
+
+                # Falls OKX API Keys aus der EU verwendet werden:
+                if ex_name == "okx":
+                    config["hostname"] = (
+                        "eea.okx.com"  # Alternative: 'my.okx.com'
+                    )
 
                 instance = ex_class(config)
                 fee = self.exchange_fees.get(ex_name, 0.0020)
@@ -69,22 +82,30 @@ class LiveArbitrageTrader:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
-                        "timestamp", "symbol", "buy_ex", "sell_ex",
-                        "trade_amount", "buy_price", "sell_price",
-                        "profit_usdt", "status",
+                        "timestamp",
+                        "symbol",
+                        "buy_ex",
+                        "sell_ex",
+                        "trade_amount",
+                        "buy_price",
+                        "sell_price",
+                        "profit_usdt",
+                        "status",
                     ],
                 )
                 writer.writeheader()
 
-    def check_live_balance(self, exchange_name):
+    def check_live_balance(self, exchange_name, asset="USDT"):
         try:
-            balance_info = self.exchanges[exchange_name]["instance"].fetch_balance()
-            usdt_free = float(balance_info.get("USDT", {}).get("free", 0.0))
-            usd_free = float(balance_info.get("USD", {}).get("free", 0.0))
-
-            return max(usdt_free, usd_free)
+            balance_info = self.exchanges[exchange_name][
+                "instance"
+            ].fetch_balance()
+            return float(balance_info.get(asset, {}).get("free", 0.0))
         except Exception as e:
-            print(f"⚠️ Guthaben-Abfrage für {exchange_name.upper()} fehlgeschlagen: {e}")
+            print(
+                f"⚠️ Guthaben-Abfrage für {exchange_name.upper()} ({asset})"
+                f" fehlgeschlagen: {e}"
+            )
             return 0.0
 
     def execute_live_arbitrage(
@@ -94,27 +115,34 @@ class LiveArbitrageTrader:
             buy_ex = self.exchanges[buy_ex_name]["instance"]
             sell_ex = self.exchanges[sell_ex_name]["instance"]
 
-            ask_buy = float(ticker_buy.get("ask", 0))
-            bid_sell = float(ticker_sell.get("bid", 0))
+            ask_buy = float(ticker_buy.get("ask", 0) or 0)
+            bid_sell = float(ticker_sell.get("bid", 0) or 0)
             if ask_buy <= 0 or bid_sell <= 0:
                 return
 
             raw_margin = ((bid_sell - ask_buy) / ask_buy) * 100
-            if raw_margin <= 0 or raw_margin > self.max_raw_margin_pct:
-                return
-
             total_fee_pct = (
-                self.exchanges[buy_ex_name]["fee"] + self.exchanges[sell_ex_name]["fee"]
+                self.exchanges[buy_ex_name]["fee"]
+                + self.exchanges[sell_ex_name]["fee"]
             ) * 100
-            if (raw_margin - total_fee_pct) < self.min_profit_pct:
+
+            if (
+                raw_margin <= 0
+                or raw_margin > self.max_raw_margin_pct
+                or (raw_margin - total_fee_pct) < self.min_profit_pct
+            ):
                 return
 
-            current_usdt = self.check_live_balance(buy_ex_name)
+            # Balance Check (USDT auf Buy-Ex)
+            current_usdt = self.check_live_balance(buy_ex_name, "USDT")
             if current_usdt < self.fixed_trade_amount:
                 return
 
+            # Orderbücher abrufen
             ob_buy = buy_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
-            ob_sell = sell_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
+            ob_sell = sell_ex.fetch_order_book(
+                symbol, limit=self.orderbook_limit
+            )
             if not ob_buy.get("asks") or not ob_sell.get("bids"):
                 return
 
@@ -130,17 +158,18 @@ class LiveArbitrageTrader:
             ):
                 return
 
+            # Menge präzise anhand des Ask-Preises berechnen
             quantity = self.fixed_trade_amount / best_ask
 
             print("\n" + "🚨" * 25)
-            print(f"⚡ ECHTER LIVE-TRADE AUSGEFÜHRT! {symbol}")
+            print(f"⚡ ECHTER LIVE-TRADE EXECUTION: {symbol}")
             print(
-                f"Kauf auf {buy_ex_name.upper()} @ ${best_ask:.6f} | "
-                f"Verkauf auf {sell_ex_name.upper()} @ ${best_bid:.6f}"
+                f"Kauf auf {buy_ex_name.upper()} @ ${best_ask:.6f} | Verkauf auf"
+                f" {sell_ex_name.upper()} @ ${best_bid:.6f}"
             )
-            print(f"Einsatz: ${self.fixed_trade_amount:.2f} | Erwartetes Netto: +{real_net_pct:.3f}%")
             print("🚨" * 25 + "\n")
 
+            # 1. Buy Order abfeuern
             buy_order = buy_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -149,27 +178,43 @@ class LiveArbitrageTrader:
                 price=best_ask,
                 params={"timeInForce": "IOC"},
             )
-            print(f"✅ BUY Order Platziert: ID {buy_order.get('id', 'N/A')}")
 
-            time.sleep(0.15)
+            # Gefüllte Menge auslesen (falls Partial Fill)
+            filled_qty = float(
+                buy_order.get("filled", 0.0) or buy_order.get("amount", 0.0)
+            )
 
+            if filled_qty <= 0:
+                print(
+                    f"⚠️ Buy Order auf {buy_ex_name.upper()} wurde nicht"
+                    " gefüllt (IOC Storniert)."
+                )
+                return
+
+            # 2. Sell Order unmittelbar danach platzieren (ohne sleep)
             sell_order = sell_ex.create_order(
                 symbol=symbol,
                 type="limit",
                 side="sell",
-                amount=quantity,
+                amount=filled_qty,
                 price=best_bid,
                 params={"timeInForce": "IOC"},
             )
-            print(f"✅ SELL Order Platziert: ID {sell_order.get('id', 'N/A')}")
 
+            # In CSV loggen
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
-                        "timestamp", "symbol", "buy_ex", "sell_ex",
-                        "trade_amount", "buy_price", "sell_price",
-                        "profit_usdt", "status",
+                        "timestamp",
+                        "symbol",
+                        "buy_ex",
+                        "sell_ex",
+                        "trade_amount",
+                        "buy_price",
+                        "sell_price",
+                        "profit_usdt",
+                        "status",
                     ],
                 )
                 writer.writerow(
@@ -178,11 +223,11 @@ class LiveArbitrageTrader:
                         "symbol": symbol,
                         "buy_ex": buy_ex_name.upper(),
                         "sell_ex": sell_ex_name.upper(),
-                        "trade_amount": self.fixed_trade_amount,
+                        "trade_amount": filled_qty * best_ask,
                         "buy_price": best_ask,
                         "sell_price": best_bid,
                         "profit_usdt": round(
-                            self.fixed_trade_amount * (real_net_pct / 100), 6
+                            (filled_qty * best_ask) * (real_net_pct / 100), 6
                         ),
                         "status": "LIVE_EXECUTED",
                     }
@@ -192,11 +237,8 @@ class LiveArbitrageTrader:
             print(f"❌ FEHLER beim Live-Trade {symbol}: {e}")
 
     def run(self, duration_hours=0.5, delay_seconds=3):
-        print(
-            f"\n🚀 Live Trading gestartet. Festbetrag pro Trade: ${self.fixed_trade_amount:.2f}"
-        )
-        start_time = time.time()
-        end_time = start_time + duration_hours * 3600
+        print(f"\n🚀 Live Trading gestartet. Target: ${self.fixed_trade_amount}")
+        end_time = time.time() + duration_hours * 3600
 
         for name, data in self.exchanges.items():
             try:
@@ -219,12 +261,14 @@ class LiveArbitrageTrader:
                     if i == j:
                         continue
                     ex1, ex2 = active_exchanges[i], active_exchanges[j]
-                    t1, t2 = all_tickers[ex1], all_tickers[ex2]
+                    t1, t2 = all_tickers.get(ex1, {}), all_tickers.get(ex2, {})
 
-                    s1 = {s for s in t1.keys() if s.endswith("/USDT") or s.endswith("/USD")}
-                    s2 = {s for s in t2.keys() if s.endswith("/USDT") or s.endswith("/USD")}
+                    s1 = set(t1.keys())
+                    s2 = set(t2.keys())
 
-                    common_symbols = s1.intersection(s2).intersection(self.whitelist)
+                    common_symbols = s1.intersection(s2).intersection(
+                        self.whitelist
+                    )
 
                     for symbol in common_symbols:
                         self.execute_live_arbitrage(
