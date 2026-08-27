@@ -56,6 +56,7 @@ class MultiExchangeTrader:
         self.rejected_orderbook = 0
         self.rejected_liquidity = 0
         self.rejected_profit = 0
+        self.rejected_balance = 0
         self.invalid_spreads = 0
 
         self.csv_file = (
@@ -266,6 +267,16 @@ class MultiExchangeTrader:
         self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell
     ):
         try:
+            # ⚖️ REBALANCING / BALANCE CHECK:
+            # Prüfen, ob die Kauf-Börse überhaupt noch genügend USDT-Guthaben für $100 hat
+            if self.balances[buy_ex_name] < self.amount:
+                self.rejected_balance += 1
+                print(
+                    f"⚠️ [{symbol}] UNGENÜGENDES GUTHABEN auf {buy_ex_name.upper()} "
+                    f"(${self.balances[buy_ex_name]:.2f} < ${self.amount:.2f}) → TRADE ÜBERSPRUNGEN"
+                )
+                return
+
             ask_buy = ticker_buy.get("ask")
             bid_sell = ticker_sell.get("bid")
             if not ask_buy or not bid_sell:
@@ -447,6 +458,10 @@ class MultiExchangeTrader:
             print(
                 f"Einsatz: ${self.amount:,.2f} | Netto: +{real_profit_pct:.4f}% | Gewinn: +${profit_usdt:.6f}"
             )
+            print(
+                f"📊 Neue Stände: {buy_ex_name.upper()}: ${self.balances[buy_ex_name]:,.2f} | "
+                f"{sell_ex_name.upper()}: ${self.balances[sell_ex_name]:,.2f}"
+            )
             print("=" * 70 + "\n")
 
             try:
@@ -510,7 +525,7 @@ class MultiExchangeTrader:
         )
 
         print("\n" + "=" * 70)
-        print("🏁 PAPER-TEST BEENDET (WHITELIST-MODUS)")
+        print("🏁 PAPER-TEST BEENDET (GUTHABEN-GEPRÜFT)")
         print("=" * 70)
         print(
             f"💰 Startkapital: ${self.starting_total_balance:,.2f} | Endkapital: ${end_total:,.4f}"
@@ -524,7 +539,12 @@ class MultiExchangeTrader:
         print(
             f"💵 Ø Gewinn: ${average_profit:+.6f} | Max: ${best_trade:+.6f}"
         )
+        print(f"⚠️ Wegen fehlendem Guthaben übersprungen: {self.rejected_balance}")
         print(f"⏱️ Laufzeit: {runtime_seconds / 60:.2f} Minuten")
+        print("-" * 70)
+        print("🏦 BÖRSEN-ENDSTAND:")
+        for ex, bal in self.balances.items():
+            print(f"  • {ex.upper():<10}: ${bal:,.2f}")
         print("=" * 70)
 
         # 📊 Detaillierte Auswertung nach Handelspaaren
@@ -563,7 +583,7 @@ class MultiExchangeTrader:
                 print(f"⚠️ Fehler bei Paar-Analyse: {e}")
 
     def run_continuous(self, duration_hours=1, delay_seconds=3):
-        print("\n🚀 Starte Trader [Whitelisted Paper Trading]...")
+        print("\n🚀 Starte Trader [Balance-Checked Whitelisted Paper Trading]...")
         print(f"🎯 Whitelist aktiv ({len(self.whitelist)} Paare): {', '.join(sorted(self.whitelist))}")
 
         for name, data in list(self.exchanges.items()):
@@ -604,7 +624,6 @@ class MultiExchangeTrader:
                     s1 = {s for s in t1.keys() if s.endswith("/USDT")}
                     s2 = {s for s in t2.keys() if s.endswith("/USDT")}
                     
-                    # 🎯 Nur Paare berücksichtigen, die sowohl auf beiden Börsen vorkommen als auch in der WHITELIST stehen
                     common_symbols = s1.intersection(s2).intersection(self.whitelist)
 
                     for symbol in common_symbols:
@@ -621,8 +640,8 @@ class MultiExchangeTrader:
 if __name__ == "__main__":
     trader = MultiExchangeTrader(
         amount_per_trade=100.0,                  # 100 USDT Einsatz
-        starting_balance_per_exchange=1000.0,     # Startguthaben
-        min_profit_pct=0.10,                      # Mindestens 0,10% Gewinn nach allen Gebühren
+        starting_balance_per_exchange=1000.0,     # Startguthaben per Börse
+        min_profit_pct=0.10,                      # Mindestens 0,10% Gewinn nach Gebühren
         dry_run=True,
     )
 
