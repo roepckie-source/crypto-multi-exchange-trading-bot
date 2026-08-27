@@ -12,6 +12,7 @@ class LiveArbitrageTrader:
         self.max_raw_margin_pct = 1.5
         self.orderbook_limit = 20
 
+        # 🎯 Whitelist der Paare (OKX, BITRUE & MEXC)
         self.whitelist = {
             "MIN/USDT",
             "NES/USDT",
@@ -25,22 +26,25 @@ class LiveArbitrageTrader:
             "JASMY/USDT",
         }
 
+        # Spot-Taker-Gebührenstrukturen
         self.exchange_fees = {
             "okx": 0.0010,
             "bitrue": 0.0020,
+            "mexc": 0.0010,  # Standard MEXC Spot-Taker-Gebühr
         }
 
         self.csv_file = "live_trading_results_real.csv"
         self.exchanges = {}
 
         print(
-            "🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX &"
-            " BITRUE)..."
+            "🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX, BITRUE &"
+            " MEXC)..."
         )
 
         for ex_name, ex_class in [
             ("okx", ccxt.okx),
             ("bitrue", ccxt.bitrue),
+            ("mexc", ccxt.mexc),  # 🚀 MEXC hinzugefügt
         ]:
             try:
                 api_key = os.getenv(f"{ex_name.upper()}_API_KEY", "")
@@ -58,11 +62,8 @@ class LiveArbitrageTrader:
                 if password:
                     config["password"] = password
 
-                # Falls OKX API Keys aus der EU verwendet werden:
                 if ex_name == "okx":
-                    config["hostname"] = (
-                        "eea.okx.com"  # Alternative: 'my.okx.com'
-                    )
+                    config["hostname"] = "eea.okx.com"
 
                 instance = ex_class(config)
                 fee = self.exchange_fees.get(ex_name, 0.0020)
@@ -133,12 +134,10 @@ class LiveArbitrageTrader:
             ):
                 return
 
-            # Balance Check (USDT auf Buy-Ex)
             current_usdt = self.check_live_balance(buy_ex_name, "USDT")
             if current_usdt < self.fixed_trade_amount:
                 return
 
-            # Orderbücher abrufen
             ob_buy = buy_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
             ob_sell = sell_ex.fetch_order_book(
                 symbol, limit=self.orderbook_limit
@@ -158,7 +157,6 @@ class LiveArbitrageTrader:
             ):
                 return
 
-            # Menge präzise anhand des Ask-Preises berechnen
             quantity = self.fixed_trade_amount / best_ask
 
             print("\n" + "🚨" * 25)
@@ -169,7 +167,6 @@ class LiveArbitrageTrader:
             )
             print("🚨" * 25 + "\n")
 
-            # 1. Buy Order abfeuern
             buy_order = buy_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -179,7 +176,6 @@ class LiveArbitrageTrader:
                 params={"timeInForce": "IOC"},
             )
 
-            # Gefüllte Menge auslesen (falls Partial Fill)
             filled_qty = float(
                 buy_order.get("filled", 0.0) or buy_order.get("amount", 0.0)
             )
@@ -191,7 +187,6 @@ class LiveArbitrageTrader:
                 )
                 return
 
-            # 2. Sell Order unmittelbar danach platzieren (ohne sleep)
             sell_order = sell_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -201,7 +196,6 @@ class LiveArbitrageTrader:
                 params={"timeInForce": "IOC"},
             )
 
-            # In CSV loggen
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
