@@ -1,4 +1,4 @@
-name: Run Live Trader (Real Trading)
+ name: Run Live Trader (Real Trading)
 
 on:
   workflow_dispatch:
@@ -47,28 +47,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-
-- name: Render Job Summary
-  if: always()
-  run: |
-    echo "### 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
-    if [ -s live_trading_results_real.csv ]; then
-      echo "\`\`\`csv" >> $GITHUB_STEP_SUMMARY
-      cat live_trading_results_real.csv >> $GITHUB_STEP_SUMMARY
-      echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-    else
-      echo "⚠️ Keine Trades ausgeführt oder Bericht leer." >> $GITHUB_STEP_SUMMARY
-    fi
-
-- name: Zeige Trading Ergebnisse
-  if: always()
-  run: |
-    echo "# 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
-    if [ -f live_trading_results_real.csv ]; then
-      echo "### Ausgeführte Trades / Signale:" >> $GITHUB_STEP_SUMMARY
-      echo '```' >> $GITHUB_STEP_SUMMARY
-      cat live_trading_results_real.csv >> $GITHUB_STEP_SUMMARY
-      echo '```' >> $GITHUB_STEP_SUMMARY
-    else
-      echo "⚠️ Keine Ergebnisse gefunden (Datei nicht vorhanden)." >> $GITHUB_STEP_SUMMARY
-    fi
+      - name: Abschlussbericht in GitHub Summary anzeigen
+        if: always()
+        run: |
+          echo "## 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
+          if [ -s live_trading_results_real.csv ]; then
+            echo "### Ausgeführte Trades / Signale:" >> $GITHUB_STEP_SUMMARY
+            echo '```csv' >> $GITHUB_STEP_SUMMARY
+            cat live_trading_results_real.csv >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Keine Ergebnisse oder Datei leer." >> $GITHUB_STEP_SUMMARY
+          fi
