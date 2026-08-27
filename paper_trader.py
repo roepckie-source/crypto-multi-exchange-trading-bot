@@ -7,7 +7,7 @@ import ccxt
 class MultiExchangeTrader:
     def __init__(
         self,
-        amount_per_trade=1000.0,
+        amount_per_trade=100.0,
         starting_balance_per_exchange=1000.0,
         min_profit_pct=0.10,
         dry_run=True,
@@ -15,10 +15,16 @@ class MultiExchangeTrader:
         self.amount = float(amount_per_trade)
         self.starting_balance_per_exchange = float(starting_balance_per_exchange)
         self.min_profit_pct = float(min_profit_pct)
-        self.max_raw_margin_pct = 5.0
+        self.max_raw_margin_pct = 1.5  # Strikte Obergrenze gegen Illiquiditäts-Fallen
         self.dry_run = dry_run
         self.orderbook_limit = 20
-        self.default_fee = 0.001
+
+        # Exakte Spot-Taker-Gebührenstrukturen (VIP 0)
+        self.exchange_fees = {
+            "okx": 0.0010,     # 0.10% Taker
+            "kucoin": 0.0010,  # 0.10% Taker
+            "bitrue": 0.0020,  # 0.20% Taker
+        }
 
         self.balances = {
             "okx": self.starting_balance_per_exchange,
@@ -69,9 +75,10 @@ class MultiExchangeTrader:
                         }
                     )
                 instance = ex_class(config)
+                fee = self.exchange_fees.get(ex_name, 0.0020)
                 self.exchanges[ex_name] = {
                     "instance": instance,
-                    "fee": self.default_fee,
+                    "fee": fee,
                 }
             except Exception as e:
                 print(f"⚠️ {ex_name.upper()} Initialisierungsfehler: {e}")
@@ -301,6 +308,9 @@ class MultiExchangeTrader:
                 )
                 return
 
+            # Realistische Latenz-Simulation (200ms Netzübertragung vor Orderbuchabfrage)
+            time.sleep(0.20)
+
             buy_ex = self.exchanges[buy_ex_name]["instance"]
             sell_ex = self.exchanges[sell_ex_name]["instance"]
 
@@ -487,7 +497,7 @@ class MultiExchangeTrader:
         )
 
         print("\n" + "=" * 70)
-        print("🏁 PAPER-TEST BEENDET")
+        print("🏁 PAPER-TEST BEENDET (REALISTISCHES MODELL)")
         print("=" * 70)
         print(
             f"💰 Startkapital: ${self.starting_total_balance:,.2f} | Endkapital: ${end_total:,.4f}"
@@ -505,13 +515,13 @@ class MultiExchangeTrader:
         print("=" * 70)
 
     def run_continuous(self, duration_hours=1, delay_seconds=3):
-        print("\n🚀 Starte Trader [Paper Trading]...")
+        print("\n🚀 Starte Trader [Paper Trading] mit exakten Gebühren & Latenz-Simulation...")
 
         for name, data in list(self.exchanges.items()):
             try:
                 data["instance"].load_markets()
                 print(
-                    f"✅ Märkte geladen für {name.upper()}: {len(data['instance'].markets)} Paare"
+                    f"✅ Märkte geladen für {name.upper()} (Gebühr: {data['fee']*100:.2f}%): {len(data['instance'].markets)} Paare"
                 )
             except Exception as e:
                 print(f"⚠️ Fehler beim Laden der Märkte von {name.upper()}: {e}")
@@ -559,13 +569,10 @@ class MultiExchangeTrader:
 
 if __name__ == "__main__":
     trader = MultiExchangeTrader(
-        amount_per_trade=100.0,  # Von 1000.0 auf 100.0 USDT gesenkt
-        starting_balance_per_exchange=1000.0,
-        min_profit_pct=0.10,
+        amount_per_trade=100.0,                  # 100 USDT Einsatz
+        starting_balance_per_exchange=1000.0,     # Startguthaben
+        min_profit_pct=0.10,                      # Mindestens 0,10% Gewinn nach allen Gebühren
         dry_run=True,
     )
-    # Maximal erlaubten Raw-Spread im Trader-Objekt begrenzen:
-    trader.max_raw_margin_pct = 1.5  # Von 5.0% auf 1.5% gesenkt
 
     trader.run_continuous(duration_hours=10 / 60, delay_seconds=3)
-        
