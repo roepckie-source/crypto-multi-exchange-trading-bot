@@ -1,38 +1,14 @@
-name: Bitrue Paper Trader
+name: Run Paper Trader (10 Min)
 
 on:
   workflow_dispatch:
-    inputs:
-      total_scans:
-        description: 'Anzahl der Scans'
-        required: true
-        default: '50'
-        type: string
-      trade_amount:
-        description: 'Einsatz in USDT'
-        required: true
-        default: '10.0'
-        type: string
-      min_threshold:
-        description: 'Mindestgewinn in %'
-        required: true
-        default: '0.01'
-        type: string
-      exchange_name:
-        description: 'Börse auswählen'
-        required: true
-        default: 'bitrue'
-        type: choice
-        options:
-          - bitrue
-          - kucoin
-
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 */6 * * *'
 
 jobs:
   run-paper-trader:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Repository auschecken
@@ -49,56 +25,26 @@ jobs:
           pip install ccxt
 
       - name: Paper Trader ausführen
-        run: python -u main.py
         env:
-          EXCHANGE_NAME: ${{ inputs.exchange_name || 'bitrue' }}
-          TRADE_AMOUNT: ${{ inputs.trade_amount || '10.0' }}
-          MIN_THRESHOLD: ${{ inputs.min_threshold || '0.01' }}
-          TOTAL_SCANS: ${{ inputs.total_scans || '50' }}
-
-      - name: Zusammenfassung in Step Summary schreiben
-        if: always()
+          PYTHONUNBUFFERED: "1"
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+          KUCOIN_API_KEY: ${{ secrets.KUCOIN_API_KEY }}
+          KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }}
+          KUCOIN_PASSPHRASE: ${{ secrets.KUCOIN_PASSPHRASE }}
+          BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
+          BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
         run: |
-          python -c "
-          import csv, os
-
-          csv_file = 'trading_results.csv'
-          summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
-
-          if not os.path.exists(csv_file) or not summary_file:
-              exit(0)
-
-          with open(csv_file, mode='r', encoding='utf-8') as f:
-              reader = list(csv.DictReader(f))
-
-          total_scans = len(set(r['scan'] for r in reader)) if reader else 0
-          accepted_trades = [r for r in reader if r['accepted'] == 'True']
-          
-          # Beste Rendite ermitteln
-          best_pct = max([float(r['profit_pct']) for r in reader]) if reader else 0.0
-
-          markdown = f'### 📊 Arbitrage Scan Ergebnisse\n\n'
-          markdown += f'- **Gesamte Scans:** {total_scans}\n'
-          markdown += f'- **Akzeptierte Trades:** {len(accepted_trades)}\n'
-          markdown += f'- **Beste Netto-Rendite:** `{best_pct:+.4f}%`\n\n'
-
-          if accepted_trades:
-              markdown += '#### 🟢 Gefundene Gelegenheiten\n\n'
-              markdown += '| Scan | Route | Rendite (%) | Gewinn ($) |\n'
-              markdown += '| --- | --- | --- | --- |\n'
-              for r in accepted_trades:
-                  markdown += f'| {r[\"scan\"]} | `{r[\"route\"]}` | `{r[\"profit_pct\"]}%` | `${r[\"profit_usd\"]}` |\n'
-          else:
-              markdown += '> 🔴 **Keine profitablen Gelegenheiten** im letzten Durchlauf gefunden.\n'
-
-          with open(summary_file, 'a', encoding='utf-8') as f:
-              f.write(markdown)
-          "
+          python paper_trader.py
 
       - name: Ergebnisse als Artefakt hochladen
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trading-results-${{ github.run_id }}
-          path: **/trading_results.csv
+          name: paper-trading-results-${{ github.run_id }}
+          path: |
+            paper_trading_results_v3.csv
+            log_chancen_v3.csv
           if-no-files-found: ignore
+          retention-days: 7
