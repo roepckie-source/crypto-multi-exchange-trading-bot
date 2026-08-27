@@ -14,8 +14,8 @@ class LiveArbitrageTrader:
         # 🔑 DEINE API-KEYS DIREKT HIER EINTRAGEN
         credentials = {
             "okx": {
-                "apiKey": "ef1a9518-ae9b-4edf-9b6c-e16a81427cb3",
-                "secret": "D6EC06E8197553F4E446C4E7CCDF9B22",
+                "apiKey": "154759bb-1c65-4284-8101-4dae93cd3b60",
+                "secret": "249C68267D2FB2913D1C77D2B8DD5545",
                 "password": "Miltitz2026#Leipzig",
             },
             "kucoin": {
