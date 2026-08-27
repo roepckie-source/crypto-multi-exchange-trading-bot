@@ -645,4 +645,5 @@ if __name__ == "__main__":
         dry_run=True,
     )
 
-    trader.run_continuous(duration_hours=10 / 60, delay_seconds=3)
+    # Laufzeit auf 1 Stunde (60 Minuten) setzen:
+    trader.run_continuous(duration_hours=1.0, delay_seconds=3)
