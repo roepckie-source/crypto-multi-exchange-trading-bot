@@ -6,7 +6,7 @@ on:
     - cron: '0 */6 * * *'
 
 jobs:
-  run-paper-trader:
+  run: python live_trader.py
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
