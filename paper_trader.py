@@ -7,17 +7,20 @@ import ccxt
 class MultiExchangeTrader:
     def __init__(
         self,
-        amount_per_trade=100.0,
         starting_balance_per_exchange=1000.0,
         min_profit_pct=0.10,
         dry_run=True,
     ):
-        self.amount = float(amount_per_trade)
         self.starting_balance_per_exchange = float(starting_balance_per_exchange)
         self.min_profit_pct = float(min_profit_pct)
         self.max_raw_margin_pct = 1.5  # Strikte Obergrenze gegen Illiquiditäts-Fallen
         self.dry_run = dry_run
         self.orderbook_limit = 20
+
+        # Dynamisches Risikomanagement
+        self.position_pct = 0.10  # Nutze 10% des aktuellen Börsenguthabens pro Trade
+        self.min_trade_amount = 10.0  # Mindesteinsatz in USDT
+        self.max_trade_amount = 200.0  # Maximaleinsatz in USDT
 
         # 🎯 WHITELIST: Nur die lukrativsten Paare scannen & handeln
         self.whitelist = {
@@ -183,6 +186,15 @@ class MultiExchangeTrader:
         except Exception:
             pass
 
+    def calculate_trade_amount(self, buy_ex_name):
+        """Berechnet dynamisch den Trade-Betrag basierend auf dem aktuellen Guthaben"""
+        current_bal = self.balances[buy_ex_name]
+        if current_bal < self.min_trade_amount:
+            return 0.0
+
+        dynamic_amount = current_bal * self.position_pct
+        return min(max(dynamic_amount, self.min_trade_amount), self.max_trade_amount)
+
     def simulate_buy(self, asks, usdt_amount):
         remaining_usdt = float(usdt_amount)
         coin_amount = 0.0
@@ -267,14 +279,10 @@ class MultiExchangeTrader:
         self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell
     ):
         try:
-            # ⚖️ REBALANCING / BALANCE CHECK:
-            # Prüfen, ob die Kauf-Börse überhaupt noch genügend USDT-Guthaben für $100 hat
-            if self.balances[buy_ex_name] < self.amount:
+            # ⚖️ DYNAMISCHE POSITIONSSKALIERUNG
+            trade_amount = self.calculate_trade_amount(buy_ex_name)
+            if trade_amount <= 0.0:
                 self.rejected_balance += 1
-                print(
-                    f"⚠️ [{symbol}] UNGENÜGENDES GUTHABEN auf {buy_ex_name.upper()} "
-                    f"(${self.balances[buy_ex_name]:.2f} < ${self.amount:.2f}) → TRADE ÜBERSPRUNGEN"
-                )
                 return
 
             ask_buy = ticker_buy.get("ask")
@@ -313,12 +321,6 @@ class MultiExchangeTrader:
             total_fee_pct = (fee_buy + fee_sell) * 100
             estimated_net = raw_margin - total_fee_pct
 
-            if raw_margin >= 0.05:
-                print(
-                    f"👀 {symbol} ({buy_ex_name.upper()} -> {sell_ex_name.upper()}): "
-                    f"Ticker-Brutto +{raw_margin:.3f}% | geschätzt Netto {estimated_net:+.3f}%"
-                )
-
             if estimated_net < self.min_profit_pct:
                 self.rejected_profit += 1
                 self.log_chance(
@@ -333,14 +335,14 @@ class MultiExchangeTrader:
                 )
                 return
 
-            # Realistische Latenz-Simulation (200ms Netzübertragung)
+            # Latenz-Simulation (200ms Netzübertragung)
             time.sleep(0.20)
 
             buy_ex = self.exchanges[buy_ex_name]["instance"]
             sell_ex = self.exchanges[sell_ex_name]["instance"]
 
             print(
-                f"🔎 ORDERBOOK-CHECK {symbol} ({buy_ex_name.upper()} -> {sell_ex_name.upper()})"
+                f"🔎 ORDERBOOK-CHECK {symbol} ({buy_ex_name.upper()} -> {sell_ex_name.upper()}) | Einsatz: ${trade_amount:.2f}"
             )
 
             ob_buy = buy_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
@@ -376,11 +378,11 @@ class MultiExchangeTrader:
                 )
                 return
 
-            buy_result = self.simulate_buy(ob_buy["asks"], self.amount)
+            buy_result = self.simulate_buy(ob_buy["asks"], trade_amount)
             if not buy_result:
                 self.rejected_liquidity += 1
                 print(
-                    f"❌ [{symbol}] VERWORFEN: Nicht genügend BUY-Liquidität für ${self.amount:.2f}"
+                    f"❌ [{symbol}] VERWORFEN: Nicht genügend BUY-Liquidität für ${trade_amount:.2f}"
                 )
                 self.log_chance(
                     symbol,
@@ -415,8 +417,8 @@ class MultiExchangeTrader:
                 return
 
             final_usdt = sell_result["received_usdt"] * (1 - fee_sell)
-            profit_usdt = final_usdt - self.amount
-            real_profit_pct = (profit_usdt / self.amount) * 100
+            profit_usdt = final_usdt - trade_amount
+            real_profit_pct = (profit_usdt / trade_amount) * 100
 
             if real_profit_pct < self.min_profit_pct:
                 self.rejected_profit += 1
@@ -449,14 +451,14 @@ class MultiExchangeTrader:
             self.total_profit += profit_usdt
             self.trade_profits.append(profit_usdt)
 
-            self.balances[buy_ex_name] -= self.amount
+            self.balances[buy_ex_name] -= trade_amount
             self.balances[sell_ex_name] += final_usdt
 
             print("\n" + "=" * 70)
             print(f"🔥 [PAPER TRADE] {symbol}")
             print(f"{buy_ex_name.upper()} -> {sell_ex_name.upper()}")
             print(
-                f"Einsatz: ${self.amount:,.2f} | Netto: +{real_profit_pct:.4f}% | Gewinn: +${profit_usdt:.6f}"
+                f"Einsatz: ${trade_amount:,.2f} (10% Balance) | Netto: +{real_profit_pct:.4f}% | Gewinn: +${profit_usdt:.6f}"
             )
             print(
                 f"📊 Neue Stände: {buy_ex_name.upper()}: ${self.balances[buy_ex_name]:,.2f} | "
@@ -489,7 +491,7 @@ class MultiExchangeTrader:
                             "symbol": symbol,
                             "buy_ex": buy_ex_name.upper(),
                             "sell_ex": sell_ex_name.upper(),
-                            "trade_amount": round(self.amount, 4),
+                            "trade_amount": round(trade_amount, 4),
                             "buy_price": round(buy_result["average_price"], 10),
                             "sell_price": round(sell_result["average_price"], 10),
                             "raw_margin_pct": round(real_raw_margin, 5),
@@ -525,7 +527,7 @@ class MultiExchangeTrader:
         )
 
         print("\n" + "=" * 70)
-        print("🏁 PAPER-TEST BEENDET (GUTHABEN-GEPRÜFT)")
+        print("🏁 PAPER-TEST BEENDET (DYNAMISCHE POSITIONEN)")
         print("=" * 70)
         print(
             f"💰 Startkapital: ${self.starting_total_balance:,.2f} | Endkapital: ${end_total:,.4f}"
@@ -539,7 +541,6 @@ class MultiExchangeTrader:
         print(
             f"💵 Ø Gewinn: ${average_profit:+.6f} | Max: ${best_trade:+.6f}"
         )
-        print(f"⚠️ Wegen fehlendem Guthaben übersprungen: {self.rejected_balance}")
         print(f"⏱️ Laufzeit: {runtime_seconds / 60:.2f} Minuten")
         print("-" * 70)
         print("🏦 BÖRSEN-ENDSTAND:")
@@ -583,7 +584,7 @@ class MultiExchangeTrader:
                 print(f"⚠️ Fehler bei Paar-Analyse: {e}")
 
     def run_continuous(self, duration_hours=1, delay_seconds=3):
-        print("\n🚀 Starte Trader [Balance-Checked Whitelisted Paper Trading]...")
+        print("\n🚀 Starte Trader [Dynamic Balance Paper Trading]...")
         print(f"🎯 Whitelist aktiv ({len(self.whitelist)} Paare): {', '.join(sorted(self.whitelist))}")
 
         for name, data in list(self.exchanges.items()):
@@ -639,7 +640,6 @@ class MultiExchangeTrader:
 
 if __name__ == "__main__":
     trader = MultiExchangeTrader(
-        amount_per_trade=100.0,                  # 100 USDT Einsatz
         starting_balance_per_exchange=1000.0,     # Startguthaben per Börse
         min_profit_pct=0.10,                      # Mindestens 0,10% Gewinn nach Gebühren
         dry_run=True,
