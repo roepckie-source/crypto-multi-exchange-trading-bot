@@ -6,37 +6,38 @@ import ccxt
 
 class LiveArbitrageTrader:
     def __init__(self, fixed_trade_amount=10.0, min_profit_pct=0.15):
-        self.fixed_trade_amount = float(fixed_trade_amount)  # Max $10 pro Trade für Echthandels-Tests
-        self.min_profit_pct = float(min_profit_pct)  # Sicherheits-Puffer für Gebühren & Slippage
-        self.max_raw_margin_pct = 1.5  # Strikte Obergrenze gegen illiquide Ausreißer
+        self.fixed_trade_amount = float(fixed_trade_amount)  # Max $10 pro Trade
+        self.min_profit_pct = float(min_profit_pct)  # Mindestgewinn nach Gebühren
+        self.max_raw_margin_pct = 1.5  # Obergrenze gegen illiquide Ausreißer
         self.orderbook_limit = 20
+
+        # 🔑 DEINE API-KEYS DIREKT HIER EINTRAGEN
+        credentials = {
+            "okx": {
+                "apiKey": "ef1a9518-ae9b-4edf-9b6c-e16a81427cb3",
+                "secret": "D6EC06E8197553F4E446C4E7CCDF9B22",
+                "password": "Miltitz2026#Leipzig",
+            },
+            "kucoin": {
+                "apiKey": "6a8447f6d1e00a0001c3bd26",
+                "secret": "0819357b-005f-4016-80e1-f963dc7083ad",
+                "password": "Miltitz2026#Leipzig",
+            },
+            "bitrue": {
+                "apiKey": "3ede3afee87eb7c1bd2aa0d98634650d35843ad789dcf0f1361f163300d3cf56",
+                "secret": "bcd2d4dabba1d74a2829788d618376eee64a741932431b5ef79ccdb9b4066728",
+            },
+        }
 
         # 🎯 Whitelist der lukrativsten Paare
         self.whitelist = {
-            "MIN/USDT",
-            "NES/USDT",
-            "PRO/USDT",
-            "USTC/USDT",
-            "SAND/USDT",
-            "RVN/USDT",
-            "PEPE/USDT",
-            "LUNG/USDT",
-            "VELO/USDT",
-            "JASMY/USDT",
-            # Fallback für OKX USD-Notierungen
-            "MIN/USD",
-            "NES/USD",
-            "PRO/USD",
-            "USTC/USD",
-            "SAND/USD",
-            "RVN/USD",
-            "PEPE/USD",
-            "LUNG/USD",
-            "VELO/USD",
-            "JASMY/USD",
+            "MIN/USDT", "NES/USDT", "PRO/USDT", "USTC/USDT", "SAND/USDT",
+            "RVN/USDT", "PEPE/USDT", "LUNG/USDT", "VELO/USDT", "JASMY/USDT",
+            "MIN/USD", "NES/USD", "PRO/USD", "USTC/USD", "SAND/USD",
+            "RVN/USD", "PEPE/USD", "LUNG/USD", "VELO/USD", "JASMY/USD",
         }
 
-        # Spot-Taker-Gebührenstrukturen (VIP 0 Standard)
+        # Spot-Taker-Gebührenstrukturen
         self.exchange_fees = {
             "okx": 0.0010,
             "kucoin": 0.0010,
@@ -53,16 +54,21 @@ class LiveArbitrageTrader:
             ("bitrue", ccxt.bitrue),
         ]:
             try:
+                # Nutzt zuerst direkt eingetragene Keys, sonst Umgebungsvariablen
+                ex_creds = credentials.get(ex_name, {})
+                api_key = ex_creds.get("apiKey") or os.getenv(f"{ex_name.upper()}_API_KEY", "")
+                secret = ex_creds.get("secret") or os.getenv(f"{ex_name.upper()}_API_SECRET", "")
+                password = ex_creds.get("password") or os.getenv(f"{ex_name.upper()}_PASSPHRASE", "")
+
                 config = {
                     "enableRateLimit": True,
                     "timeout": 10000,
                     "options": {"defaultType": "spot"},
-                    "apiKey": os.getenv(f"{ex_name.upper()}_API_KEY", ""),
-                    "secret": os.getenv(f"{ex_name.upper()}_API_SECRET", ""),
+                    "apiKey": api_key,
+                    "secret": secret,
                 }
-                passphrase = os.getenv(f"{ex_name.upper()}_PASSPHRASE", "")
-                if passphrase:
-                    config["password"] = passphrase
+                if password:
+                    config["password"] = password
 
                 instance = ex_class(config)
                 fee = self.exchange_fees.get(ex_name, 0.0020)
@@ -82,28 +88,21 @@ class LiveArbitrageTrader:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
-                        "timestamp",
-                        "symbol",
-                        "buy_ex",
-                        "sell_ex",
-                        "trade_amount",
-                        "buy_price",
-                        "sell_price",
-                        "profit_usdt",
-                        "status",
+                        "timestamp", "symbol", "buy_ex", "sell_ex",
+                        "trade_amount", "buy_price", "sell_price",
+                        "profit_usdt", "status",
                     ],
                 )
                 writer.writeheader()
 
     def check_live_balance(self, exchange_name):
-        """Liest sowohl USDT als auch USD (falls OKX das Guthaben als USD führt)"""
+        """Liest sowohl USDT als auch USD ab"""
         try:
             balance_info = self.exchanges[exchange_name]["instance"].fetch_balance()
             usdt_free = float(balance_info.get("USDT", {}).get("free", 0.0))
             usd_free = float(balance_info.get("USD", {}).get("free", 0.0))
 
-            total_available = max(usdt_free, usd_free)
-            return total_available
+            return max(usdt_free, usd_free)
         except Exception as e:
             print(f"⚠️ Guthaben-Abfrage für {exchange_name.upper()} fehlgeschlagen: {e}")
             return 0.0
@@ -131,13 +130,9 @@ class LiveArbitrageTrader:
             if (raw_margin - total_fee_pct) < self.min_profit_pct:
                 return
 
-            # 2. Echtzeit-Guthaben auf Kauf-Börse prüfen (USDT / USD)
+            # 2. Guthaben prüfen
             current_usdt = self.check_live_balance(buy_ex_name)
             if current_usdt < self.fixed_trade_amount:
-                print(
-                    f"⚠️ [{symbol}] Nicht genug USDT/USD auf {buy_ex_name.upper()} "
-                    f"(${current_usdt:.2f} < ${self.fixed_trade_amount:.2f})"
-                )
                 return
 
             # 3. Orderbuch prüfen
@@ -158,7 +153,7 @@ class LiveArbitrageTrader:
             ):
                 return
 
-            # 4. Order-Größe berechnen
+            # 4. Quantity & Orders
             quantity = self.fixed_trade_amount / best_ask
 
             print("\n" + "🚨" * 25)
@@ -167,12 +162,9 @@ class LiveArbitrageTrader:
                 f"Kauf auf {buy_ex_name.upper()} @ ${best_ask:.6f} | "
                 f"Verkauf auf {sell_ex_name.upper()} @ ${best_bid:.6f}"
             )
-            print(
-                f"Einsatz: ${self.fixed_trade_amount:.2f} | Erwartetes Netto: +{real_net_pct:.3f}%"
-            )
+            print(f"Einsatz: ${self.fixed_trade_amount:.2f} | Erwartetes Netto: +{real_net_pct:.3f}%")
             print("🚨" * 25 + "\n")
 
-            # 5. EXECUTION: Echte Orders absetzen (IOC Limit-Orders)
             buy_order = buy_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -183,7 +175,6 @@ class LiveArbitrageTrader:
             )
             print(f"✅ BUY Order Platziert: ID {buy_order.get('id', 'N/A')}")
 
-            # Minimaler Puffer für Netzwerk-Synchronisation
             time.sleep(0.15)
 
             sell_order = sell_ex.create_order(
@@ -196,20 +187,13 @@ class LiveArbitrageTrader:
             )
             print(f"✅ SELL Order Platziert: ID {sell_order.get('id', 'N/A')}")
 
-            # Protokollierung
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
-                        "timestamp",
-                        "symbol",
-                        "buy_ex",
-                        "sell_ex",
-                        "trade_amount",
-                        "buy_price",
-                        "sell_price",
-                        "profit_usdt",
-                        "status",
+                        "timestamp", "symbol", "buy_ex", "sell_ex",
+                        "trade_amount", "buy_price", "sell_price",
+                        "profit_usdt", "status",
                     ],
                 )
                 writer.writerow(
@@ -259,10 +243,8 @@ class LiveArbitrageTrader:
                     if i == j:
                         continue
                     ex1, ex2 = active_exchanges[i], active_exchanges[j]
-
                     t1, t2 = all_tickers[ex1], all_tickers[ex2]
 
-                    # Erkennt /USDT und /USD Handelspaare
                     s1 = {s for s in t1.keys() if s.endswith("/USDT") or s.endswith("/USD")}
                     s2 = {s for s in t2.keys() if s.endswith("/USDT") or s.endswith("/USD")}
 
@@ -277,6 +259,5 @@ class LiveArbitrageTrader:
 
 
 if __name__ == "__main__":
-    # Startet mit $10.00 maximalem Einsatz pro Trade für 30 Minuten
     trader = LiveArbitrageTrader(fixed_trade_amount=10.0, min_profit_pct=0.15)
     trader.run(duration_hours=0.5, delay_seconds=3)
