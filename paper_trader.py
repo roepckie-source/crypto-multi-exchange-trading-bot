@@ -26,6 +26,7 @@ jobs:
 
       - name: Paper Trader ausführen (10 Minuten)
         env:
+          PYTHONUNBUFFERED: "1"
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
@@ -35,7 +36,7 @@ jobs:
           BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
           BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
         run: |
-          python paper_trader.py
+          python main_v4_test.py
 
       - name: Ergebnisse (CSV) speichern
         if: always()
@@ -45,4 +46,5 @@ jobs:
           path: |
             paper_trading_results_v3.csv
             log_chancen_v3.csv
+          if-no-files-found: ignore
           retention-days: 7
