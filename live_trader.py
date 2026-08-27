@@ -16,13 +16,32 @@ MIN_PROFIT_PCT = 0.8
 # Festgelegtes Handelsvolumen pro Arbitrage-Trade in USD
 TRADE_AMOUNT_USD = 10.0
 
-# Überwachter Krypto-Korb (Handelspaare)
+# Überwachter Krypto-Korb (Erweiterte Handelspaare für mehr Chancen)
 SYMBOLS = [
+    # --- Deine bisherigen Coins ---
     "NES/USDT",
     "RVN/USDT",
     "DFI/USDT",
     "DGB/USDT",
-    "FLOKI/USDT"
+    "FLOKI/USDT",
+
+    # --- PoW / Layer 1 (hohe Volatilität) ---
+    "KAS/USDT",    # Kaspa
+    "CFX/USDT",    # Conflux
+    "ALPH/USDT",   # Alephium
+    "CKB/USDT",    # Nervos Network
+
+    # --- Etablierte Altcoins & AI ---
+    "FET/USDT",    # Artificial Superintelligence Alliance
+    "JASMY/USDT",  # JasmyCoin
+    "GALA/USDT",   # Gala
+    "VET/USDT",    # VeChain
+    "STX/USDT",    # Stacks
+
+    # --- High-Volatility Memes ---
+    "PEPE/USDT",   # Pepe
+    "BONK/USDT",   # Bonk
+    "SHIB/USDT"    # Shiba Inu
 ]
 
 def init_csv():
@@ -190,37 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-      - name: Abschlussbericht in GitHub Summary anzeigen
-        if: always()
-        run: |
-          echo "## 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -s live_trading_results_real.csv ]; then
-            
-            # 1. Erfolgreiche Trades filtern und als Tabelle anzeigen
-            echo "### ✅ Erfolgreich ausgeführte Trades" >> $GITHUB_STEP_SUMMARY
-            if grep -q "SUCCESS" live_trading_results_real.csv; then
-              echo "| Zeit | Symbol | Kauf-Börse | Verkauf-Börse | Spread | Status |" >> $GITHUB_STEP_SUMMARY
-              echo "| --- | --- | --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-              grep "SUCCESS" live_trading_results_real.csv | awk -F',' '{print "| " $1 " | " $2 " | " $3 " | " $4 " | " $7 "% | " $8 " |"}' >> $GITHUB_STEP_SUMMARY
-            else
-              echo "_Keine erfolgreichen Trades in diesem Run._" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            echo "" >> $GITHUB_STEP_SUMMARY
-
-            # 2. Fehlgeschlagene Versuche / Hinweise filtern
-            echo "### ⚠️ Abgebrochene / Blockierte Versuche" >> $GITHUB_STEP_SUMMARY
-            if grep -v "SUCCESS" live_trading_results_real.csv | grep -v "Timestamp" > /dev/null; then
-              echo "| Zeit | Symbol | Kauf-Börse | Verkauf-Börse | Spread | Grund / Fehlermeldung |" >> $GITHUB_STEP_SUMMARY
-              echo "| --- | --- | --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-              grep -v "SUCCESS" live_trading_results_real.csv | grep -v "Timestamp" | awk -F',' '{print "| " $1 " | " $2 " | " $3 " | " $4 " | " $7 "% | " $8 " |"}' >> $GITHUB_STEP_SUMMARY
-            else
-              echo "_Keine Fehler oder abgebrochenen Versuche._" >> $GITHUB_STEP_SUMMARY
-            fi
-
-          else
-            echo "⚠️ Keine Ergebnisse gefunden (Datei leer oder nicht vorhanden)." >> $GITHUB_STEP_SUMMARY
-          fi
-
