@@ -1,4 +1,4 @@
-name: Run Paper Trader (10 Min)
+name: Run Live Trader (Real Trading)
 
 on:
   workflow_dispatch:
@@ -6,9 +6,9 @@ on:
     - cron: '0 */6 * * *'
 
 jobs:
-  run: python live_trader.py
+  run-live-trader:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
 
     steps:
       - name: Repository auschecken
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install ccxt
 
-      - name: Paper Trader ausführen
+      - name: Live Trader ausführen
         env:
           PYTHONUNBUFFERED: "1"
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
@@ -36,15 +36,14 @@ jobs:
           BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
           BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
         run: |
-          python paper_trader.py
+          python live_trader.py
 
       - name: Ergebnisse als Artefakt hochladen
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paper-trading-results-${{ github.run_id }}
+          name: live-trading-results-${{ github.run_id }}
           path: |
-            paper_trading_results_v3.csv
-            log_chancen_v3.csv
+            live_trading_results_real.csv
           if-no-files-found: ignore
           retention-days: 7
