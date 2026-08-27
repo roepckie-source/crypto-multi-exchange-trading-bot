@@ -1,7 +1,9 @@
 import csv
 import os
 import time
+import urllib.parse
 import ccxt
+import requests
 
 
 class LiveArbitrageTrader:
@@ -32,6 +34,10 @@ class LiveArbitrageTrader:
             "bitrue": 0.0020,
             "mexc": 0.0010,
         }
+
+        # Telegram-Konfiguration aus Umgebungsvariablen
+        self.telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
         self.csv_file = "live_trading_results_real.csv"
         self.exchanges = {}
@@ -76,6 +82,21 @@ class LiveArbitrageTrader:
                 print(f"❌ {ex_name.upper()} Verbindung fehlgeschlagen: {e}")
 
         self.init_csv()
+
+    def send_telegram_message(self, text):
+        """Sendet eine Nachricht an deine Telegram-Gruppe/Chat."""
+        if not self.telegram_bot_token or not self.telegram_chat_id:
+            return
+        try:
+            url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
+            payload = {
+                "chat_id": self.telegram_chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+            }
+            requests.post(url, json=payload, timeout=5)
+        except Exception as e:
+            print(f"⚠️ Telegram-Benachrichtigung fehlgeschlagen: {e}")
 
     def init_csv(self):
         if not os.path.exists(self.csv_file):
@@ -137,6 +158,12 @@ class LiveArbitrageTrader:
             # 1. Kauf-Guthaben prüfen (USDT auf der Kauf-Börse)
             current_usdt = self.check_live_balance(buy_ex_name, "USDT")
             if current_usdt < self.fixed_trade_amount:
+                print(
+                    f"ℹ️ [{symbol}] Spread {raw_margin:.2f}%"
+                    f" ({buy_ex_name.upper()} ➔ {sell_ex_name.upper()}): Nicht"
+                    f" genug USDT auf {buy_ex_name.upper()} (${current_usdt:.2f}"
+                    f" / ${self.fixed_trade_amount:.2f})"
+                )
                 return
 
             # 2. Verkaufs-Guthaben prüfen (Ziel-Token auf der Verkaufs-Börse)
@@ -145,7 +172,12 @@ class LiveArbitrageTrader:
             current_tokens = self.check_live_balance(sell_ex_name, base_asset)
 
             if current_tokens < required_tokens:
-                # Bricht ab, wenn auf der Verkaufs-Börse nicht genug Tokens liegen
+                print(
+                    f"ℹ️ [{symbol}] Spread {raw_margin:.2f}%"
+                    f" ({buy_ex_name.upper()} ➔ {sell_ex_name.upper()}): Nicht"
+                    f" genug {base_asset} auf {sell_ex_name.upper()}"
+                    f" ({current_tokens:.4f} / {required_tokens:.4f})"
+                )
                 return
 
             # 3. Orderbuch-Check für tatsächliche Ausführungspreise
@@ -209,6 +241,10 @@ class LiveArbitrageTrader:
                 params={"timeInForce": "IOC"},
             )
 
+            profit_usdt = round(
+                (filled_qty * best_ask) * (real_net_pct / 100), 6
+            )
+
             # Ergebnis in CSV protokollieren
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
@@ -234,12 +270,21 @@ class LiveArbitrageTrader:
                         "trade_amount": filled_qty * best_ask,
                         "buy_price": best_ask,
                         "sell_price": best_bid,
-                        "profit_usdt": round(
-                            (filled_qty * best_ask) * (real_net_pct / 100), 6
-                        ),
+                        "profit_usdt": profit_usdt,
                         "status": "LIVE_EXECUTED",
                     }
                 )
+
+            # 📲 Telegram-Benachrichtigung schicken
+            msg = (
+                f"🚀 *LIVE-TRADE AUSGEFÜHRT!*\n\n"
+                f"• *Pair:* `{symbol}`\n"
+                f"• *Kauf:* {buy_ex_name.upper()} @ `${best_ask:.6f}`\n"
+                f"• *Verkauf:* {sell_ex_name.upper()} @ `${best_bid:.6f}`\n"
+                f"• *Volumen:* `${filled_qty * best_ask:.2f}`\n"
+                f"• *Gewinn:* `+${profit_usdt:.4f}` USDT (`+{real_net_pct:.2f}%`)"
+            )
+            self.send_telegram_message(msg)
 
         except Exception as e:
             print(f"❌ FEHLER beim Live-Trade {symbol}: {e}")
