@@ -50,7 +50,6 @@ class LiveArbitrageTrader:
         print("🔌 Initialisiere API-Verbindungen für LIVE-Trading...")
         for ex_name, ex_class in [
             ("okx", ccxt.okx),
-            ("kucoin", ccxt.kucoin),
             ("bitrue", ccxt.bitrue),
         ]:
             try:
