@@ -339,3 +339,81 @@ class LiveArbitrageTrader:
 if __name__ == "__main__":
     trader = LiveArbitrageTrader(fixed_trade_amount=10.0, min_profit_pct=0.15)
     trader.run(duration_hours=0.5, delay_seconds=3)
+
+
+
+    def print_summary(self, start_time):
+        elapsed_min = round((time.time() - start_time) / 60, 1)
+
+        total_trades = 0
+        successful_trades = 0
+        total_profit = 0.0
+
+        if os.path.exists(self.csv_file):
+            with open(self.csv_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("status") == "LIVE_EXECUTED":
+                        total_trades += 1
+                        profit = float(row.get("profit_usdt", 0.0) or 0.0)
+                        total_profit += profit
+                        if profit > 0:
+                            successful_trades += 1
+
+        win_rate = (
+            (successful_trades / total_trades * 100) if total_trades > 0 else 0.0
+        )
+
+        print("\n" + "=" * 50)
+        print("📊 LIVE TRADING SESSION SUMMARY")
+        print("=" * 50)
+        print(f"⏱️ Laufzeit: {elapsed_min} Minuten")
+        print(f"⚡ Ausgeführte Trades: {total_trades}")
+        print(f"💰 Gesamter Reingewinn: +{total_profit:.6f} USDT/USDC")
+        print(f"📈 Win Rate: {win_rate:.1f}%")
+        print("=" * 50 + "\n")
+
+    def run(self, duration_hours=0.5, delay_seconds=3):
+        start_time = time.time()
+        print(f"\n🚀 Live Trading gestartet. Target: ${self.fixed_trade_amount}")
+        end_time = start_time + duration_hours * 3600
+
+        for name, data in self.exchanges.items():
+            try:
+                data["instance"].load_markets()
+            except Exception as e:
+                print(f"⚠️ Märkte laden fehlgeschlagen für {name.upper()}: {e}")
+
+        while time.time() < end_time:
+            all_tickers = {}
+            for name, data in self.exchanges.items():
+                try:
+                    all_tickers[name] = data["instance"].fetch_tickers()
+                except Exception:
+                    pass
+
+            active_exchanges = list(all_tickers.keys())
+
+            for i in range(len(active_exchanges)):
+                for j in range(len(active_exchanges)):
+                    if i == j:
+                        continue
+                    ex1, ex2 = active_exchanges[i], active_exchanges[j]
+                    t1, t2 = all_tickers.get(ex1, {}), all_tickers.get(ex2, {})
+
+                    for base in self.whitelist_base_assets:
+                        quote1 = self.preferred_quote.get(ex1, "USDT")
+                        quote2 = self.preferred_quote.get(ex2, "USDT")
+
+                        sym1 = f"{base}/{quote1}"
+                        sym2 = f"{base}/{quote2}"
+
+                        if sym1 in t1 and sym2 in t2:
+                            self.execute_live_arbitrage(
+                                base, ex1, ex2, t1[sym1], t2[sym2], sym1, sym2
+                            )
+
+            time.sleep(delay_seconds)
+
+        # Zusammenfassung am Ende des Durchlaufs ausgeben
+        self.print_summary(start_time)
