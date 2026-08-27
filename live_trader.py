@@ -45,7 +45,9 @@ class LiveArbitrageTrader:
                     "options": {"defaultType": "spot"},
                     "apiKey": api_key,
                     "secret": secret,
+                    "password": password,  # OKX benötigt dies zwingend für V5 Auth
                 }
+               
                 if password:
                     config["password"] = password
 
