@@ -12,7 +12,7 @@ class LiveArbitrageTrader:
         self.max_raw_margin_pct = 1.5
         self.orderbook_limit = 20
 
-        # 🎯 Whitelist der Paare (OKX, BITRUE & MEXC)
+        # Whitelist der Paare (OKX, BITRUE & MEXC)
         self.whitelist = {
             "MIN/USDT",
             "NES/USDT",
@@ -30,7 +30,7 @@ class LiveArbitrageTrader:
         self.exchange_fees = {
             "okx": 0.0010,
             "bitrue": 0.0020,
-            "mexc": 0.0010,  # Standard MEXC Spot-Taker-Gebühr
+            "mexc": 0.0010,
         }
 
         self.csv_file = "live_trading_results_real.csv"
@@ -44,7 +44,7 @@ class LiveArbitrageTrader:
         for ex_name, ex_class in [
             ("okx", ccxt.okx),
             ("bitrue", ccxt.bitrue),
-            ("mexc", ccxt.mexc),  # 🚀 MEXC hinzugefügt
+            ("mexc", ccxt.mexc),
         ]:
             try:
                 api_key = os.getenv(f"{ex_name.upper()}_API_KEY", "")
@@ -134,10 +134,21 @@ class LiveArbitrageTrader:
             ):
                 return
 
+            # 1. Kauf-Guthaben prüfen (USDT auf der Kauf-Börse)
             current_usdt = self.check_live_balance(buy_ex_name, "USDT")
             if current_usdt < self.fixed_trade_amount:
                 return
 
+            # 2. Verkaufs-Guthaben prüfen (Ziel-Token auf der Verkaufs-Börse)
+            base_asset = symbol.split("/")[0]
+            required_tokens = self.fixed_trade_amount / ask_buy
+            current_tokens = self.check_live_balance(sell_ex_name, base_asset)
+
+            if current_tokens < required_tokens:
+                # Bricht ab, wenn auf der Verkaufs-Börse nicht genug Tokens liegen
+                return
+
+            # 3. Orderbuch-Check für tatsächliche Ausführungspreise
             ob_buy = buy_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
             ob_sell = sell_ex.fetch_order_book(
                 symbol, limit=self.orderbook_limit
@@ -167,6 +178,7 @@ class LiveArbitrageTrader:
             )
             print("🚨" * 25 + "\n")
 
+            # Kauf-Order (IOC - Immediate or Cancel)
             buy_order = buy_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -183,10 +195,11 @@ class LiveArbitrageTrader:
             if filled_qty <= 0:
                 print(
                     f"⚠️ Buy Order auf {buy_ex_name.upper()} wurde nicht"
-                    " gefüllt (IOC Storniert)."
+                    " gefüllt (IOC storniert)."
                 )
                 return
 
+            # Verkaufs-Order auf der zweiten Börse
             sell_order = sell_ex.create_order(
                 symbol=symbol,
                 type="limit",
@@ -196,6 +209,7 @@ class LiveArbitrageTrader:
                 params={"timeInForce": "IOC"},
             )
 
+            # Ergebnis in CSV protokollieren
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
