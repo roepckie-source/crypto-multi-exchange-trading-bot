@@ -19,6 +19,20 @@ class MultiExchangeTrader:
         self.dry_run = dry_run
         self.orderbook_limit = 20
 
+        # 🎯 WHITELIST: Nur die lukrativsten Paare scannen & handeln
+        self.whitelist = {
+            "MIN/USDT",
+            "NES/USDT",
+            "PRO/USDT",
+            "USTC/USDT",
+            "SAND/USDT",
+            "RVN/USDT",
+            "PEPE/USDT",
+            "LUNG/USDT",
+            "VELO/USDT",
+            "JASMY/USDT",
+        }
+
         # Exakte Spot-Taker-Gebührenstrukturen (VIP 0)
         self.exchange_fees = {
             "okx": 0.0010,     # 0.10% Taker
@@ -308,7 +322,7 @@ class MultiExchangeTrader:
                 )
                 return
 
-            # Realistische Latenz-Simulation (200ms Netzübertragung vor Orderbuchabfrage)
+            # Realistische Latenz-Simulation (200ms Netzübertragung)
             time.sleep(0.20)
 
             buy_ex = self.exchanges[buy_ex_name]["instance"]
@@ -496,7 +510,7 @@ class MultiExchangeTrader:
         )
 
         print("\n" + "=" * 70)
-        print("🏁 PAPER-TEST BEENDET (REALISTISCHES MODELL)")
+        print("🏁 PAPER-TEST BEENDET (WHITELIST-MODUS)")
         print("=" * 70)
         print(
             f"💰 Startkapital: ${self.starting_total_balance:,.2f} | Endkapital: ${end_total:,.4f}"
@@ -521,7 +535,7 @@ class MultiExchangeTrader:
                 pair_stats = defaultdict(lambda: {"count": 0, "total_profit": 0.0, "avg_pct": []})
 
                 with open(self.csv_file, mode="r", encoding="utf-8") as f:
-                    reader = csv.DictWriter if False else csv.DictReader(f)
+                    reader = csv.DictReader(f)
                     for row in reader:
                         symbol = row["symbol"]
                         profit = float(row["profit_usdt"])
@@ -547,9 +561,10 @@ class MultiExchangeTrader:
                 print("=" * 70 + "\n")
             except Exception as e:
                 print(f"⚠️ Fehler bei Paar-Analyse: {e}")
-                             
+
     def run_continuous(self, duration_hours=1, delay_seconds=3):
-        print("\n🚀 Starte Trader [Paper Trading] mit exakten Gebühren & Latenz-Simulation...")
+        print("\n🚀 Starte Trader [Whitelisted Paper Trading]...")
+        print(f"🎯 Whitelist aktiv ({len(self.whitelist)} Paare): {', '.join(sorted(self.whitelist))}")
 
         for name, data in list(self.exchanges.items()):
             try:
@@ -588,7 +603,9 @@ class MultiExchangeTrader:
                     t1, t2 = all_tickers[ex1], all_tickers[ex2]
                     s1 = {s for s in t1.keys() if s.endswith("/USDT")}
                     s2 = {s for s in t2.keys() if s.endswith("/USDT")}
-                    common_symbols = s1.intersection(s2)
+                    
+                    # 🎯 Nur Paare berücksichtigen, die sowohl auf beiden Börsen vorkommen als auch in der WHITELIST stehen
+                    common_symbols = s1.intersection(s2).intersection(self.whitelist)
 
                     for symbol in common_symbols:
                         self.execute_arbitrage(
