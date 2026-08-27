@@ -559,10 +559,13 @@ class MultiExchangeTrader:
 
 if __name__ == "__main__":
     trader = MultiExchangeTrader(
-        amount_per_trade=1000.0,
+        amount_per_trade=100.0,  # Von 1000.0 auf 100.0 USDT gesenkt
         starting_balance_per_exchange=1000.0,
         min_profit_pct=0.10,
         dry_run=True,
     )
+    # Maximal erlaubten Raw-Spread im Trader-Objekt begrenzen:
+    trader.max_raw_margin_pct = 1.5  # Von 5.0% auf 1.5% gesenkt
 
     trader.run_continuous(duration_hours=10 / 60, delay_seconds=3)
+        
