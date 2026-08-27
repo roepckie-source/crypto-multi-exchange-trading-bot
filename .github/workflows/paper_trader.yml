@@ -1,4 +1,5 @@
- name: Run Live Trader (Real Trading)
+
+name: Run Paper Trader
 
 on:
   workflow_dispatch:
@@ -6,7 +7,7 @@ on:
     - cron: '0 */6 * * *'
 
 jobs:
-  run-live-trader:
+  run-paper-trader:
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -24,38 +25,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install ccxt
 
-      - name: Live Trader ausführen
+      - name: Paper Trader ausführen
         env:
           PYTHONUNBUFFERED: "1"
-          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
-          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
-          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
-          BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
-          BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
-          MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
-          MEXC_API_SECRET: ${{ secrets.MEXC_API_SECRET }}
         run: |
-          python live_trader.py
+          python paper_trader.py
 
       - name: Ergebnisse als Artefakt hochladen
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-trading-results-${{ github.run_id }}
+          name: paper-trading-results-${{ github.run_id }}
           path: |
-            live_trading_results_real.csv
+            paper_trading_results.csv
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Abschlussbericht in GitHub Summary anzeigen
         if: always()
         run: |
-          echo "## 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
-          if [ -s live_trading_results_real.csv ]; then
-            echo "### Ausgeführte Trades / Signale:" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Paper Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
+          if [ -s paper_trading_results.csv ]; then
+            echo "### Simulierte Trades / Signale:" >> $GITHUB_STEP_SUMMARY
             echo '```csv' >> $GITHUB_STEP_SUMMARY
-            cat live_trading_results_real.csv >> $GITHUB_STEP_SUMMARY
+            cat paper_trading_results.csv >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Keine Ergebnisse oder Datei leer." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Keine Simulations-Ergebnisse oder Datei leer." >> $GITHUB_STEP_SUMMARY
           fi
