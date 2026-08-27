@@ -190,3 +190,37 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+      - name: Abschlussbericht in GitHub Summary anzeigen
+        if: always()
+        run: |
+          echo "## 📊 Live Trading Abschlussbericht" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -s live_trading_results_real.csv ]; then
+            
+            # 1. Erfolgreiche Trades filtern und als Tabelle anzeigen
+            echo "### ✅ Erfolgreich ausgeführte Trades" >> $GITHUB_STEP_SUMMARY
+            if grep -q "SUCCESS" live_trading_results_real.csv; then
+              echo "| Zeit | Symbol | Kauf-Börse | Verkauf-Börse | Spread | Status |" >> $GITHUB_STEP_SUMMARY
+              echo "| --- | --- | --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+              grep "SUCCESS" live_trading_results_real.csv | awk -F',' '{print "| " $1 " | " $2 " | " $3 " | " $4 " | " $7 "% | " $8 " |"}' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "_Keine erfolgreichen Trades in diesem Run._" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # 2. Fehlgeschlagene Versuche / Hinweise filtern
+            echo "### ⚠️ Abgebrochene / Blockierte Versuche" >> $GITHUB_STEP_SUMMARY
+            if grep -v "SUCCESS" live_trading_results_real.csv | grep -v "Timestamp" > /dev/null; then
+              echo "| Zeit | Symbol | Kauf-Börse | Verkauf-Börse | Spread | Grund / Fehlermeldung |" >> $GITHUB_STEP_SUMMARY
+              echo "| --- | --- | --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+              grep -v "SUCCESS" live_trading_results_real.csv | grep -v "Timestamp" | awk -F',' '{print "| " $1 " | " $2 " | " $3 " | " $4 " | " $7 "% | " $8 " |"}' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "_Keine Fehler oder abgebrochenen Versuche._" >> $GITHUB_STEP_SUMMARY
+            fi
+
+          else
+            echo "⚠️ Keine Ergebnisse gefunden (Datei leer oder nicht vorhanden)." >> $GITHUB_STEP_SUMMARY
+          fi
+
