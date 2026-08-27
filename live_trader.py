@@ -1,9 +1,7 @@
 import csv
 import os
 import time
-import urllib.parse
 import ccxt
-import requests
 
 
 class LiveArbitrageTrader:
@@ -14,18 +12,28 @@ class LiveArbitrageTrader:
         self.max_raw_margin_pct = 1.5
         self.orderbook_limit = 20
 
-        # Whitelist der Paare (OKX, BITRUE & MEXC)
-        self.whitelist = {
-            "MIN/USDT",
-            "NES/USDT",
-            "PRO/USDT",
-            "USTC/USDT",
-            "SAND/USDT",
-            "RVN/USDT",
-            "PEPE/USDT",
-            "LUNG/USDT",
-            "VELO/USDT",
-            "JASMY/USDT",
+        # Whitelist der Coins (ohne Quote-Asset-Endung)
+        self.whitelist_base_assets = {
+            "MIN",
+            "NES",
+            "PRO",
+            "USTC",
+            "SAND",
+            "RVN",
+            "PEPE",
+            "LUNG",
+            "VELO",
+            "JASMY",
+            "BTC",
+            "ETH",
+            "SOL",
+        }
+
+        # Bevorzugtes Quote-Asset je Börse
+        self.preferred_quote = {
+            "okx": "USDC",
+            "bitrue": "USDT",
+            "mexc": "USDT",
         }
 
         # Spot-Taker-Gebührenstrukturen
@@ -35,16 +43,12 @@ class LiveArbitrageTrader:
             "mexc": 0.0010,
         }
 
-        # Telegram-Konfiguration aus Umgebungsvariablen
-        self.telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-
         self.csv_file = "live_trading_results_real.csv"
         self.exchanges = {}
 
         print(
-            "🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX, BITRUE &"
-            " MEXC)..."
+            "🔌 Initialisiere API-Verbindungen für LIVE-Trading (OKX [USDC],"
+            " BITRUE [USDT] & MEXC [USDT])..."
         )
 
         for ex_name, ex_class in [
@@ -83,21 +87,6 @@ class LiveArbitrageTrader:
 
         self.init_csv()
 
-    def send_telegram_message(self, text):
-        """Sendet eine Nachricht an deine Telegram-Gruppe/Chat."""
-        if not self.telegram_bot_token or not self.telegram_chat_id:
-            return
-        try:
-            url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
-            payload = {
-                "chat_id": self.telegram_chat_id,
-                "text": text,
-                "parse_mode": "Markdown",
-            }
-            requests.post(url, json=payload, timeout=5)
-        except Exception as e:
-            print(f"⚠️ Telegram-Benachrichtigung fehlgeschlagen: {e}")
-
     def init_csv(self):
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, "w", newline="", encoding="utf-8") as f:
@@ -105,9 +94,11 @@ class LiveArbitrageTrader:
                     f,
                     fieldnames=[
                         "timestamp",
-                        "symbol",
+                        "base_asset",
                         "buy_ex",
                         "sell_ex",
+                        "buy_symbol",
+                        "sell_symbol",
                         "trade_amount",
                         "buy_price",
                         "sell_price",
@@ -117,12 +108,18 @@ class LiveArbitrageTrader:
                 )
                 writer.writeheader()
 
-    def check_live_balance(self, exchange_name, asset="USDT"):
+    def check_live_balance(self, exchange_name, asset):
         try:
             balance_info = self.exchanges[exchange_name][
                 "instance"
             ].fetch_balance()
-            return float(balance_info.get(asset, {}).get("free", 0.0))
+            free_bal = float(balance_info.get(asset, {}).get("free", 0.0))
+
+            # Falls OKX das Guthaben unter 'USD' statt 'USDC' führt:
+            if free_bal == 0.0 and exchange_name == "okx" and asset == "USDC":
+                free_bal = float(balance_info.get("USD", {}).get("free", 0.0))
+
+            return free_bal
         except Exception as e:
             print(
                 f"⚠️ Guthaben-Abfrage für {exchange_name.upper()} ({asset})"
@@ -131,7 +128,14 @@ class LiveArbitrageTrader:
             return 0.0
 
     def execute_live_arbitrage(
-        self, symbol, buy_ex_name, sell_ex_name, ticker_buy, ticker_sell
+        self,
+        base_asset,
+        buy_ex_name,
+        sell_ex_name,
+        ticker_buy,
+        ticker_sell,
+        buy_symbol,
+        sell_symbol,
     ):
         try:
             buy_ex = self.exchanges[buy_ex_name]["instance"]
@@ -155,35 +159,40 @@ class LiveArbitrageTrader:
             ):
                 return
 
-            # 1. Kauf-Guthaben prüfen (USDT auf der Kauf-Börse)
-            current_usdt = self.check_live_balance(buy_ex_name, "USDT")
-            if current_usdt < self.fixed_trade_amount:
+            # 1. Kauf-Guthaben prüfen (USDC auf OKX / USDT auf Bitrue & MEXC)
+            required_quote_asset = self.preferred_quote.get(buy_ex_name, "USDT")
+            current_quote_bal = self.check_live_balance(
+                buy_ex_name, required_quote_asset
+            )
+
+            if current_quote_bal < self.fixed_trade_amount:
                 print(
-                    f"ℹ️ [{symbol}] Spread {raw_margin:.2f}%"
+                    f"ℹ️ [{base_asset}] Spread {raw_margin:.2f}%"
                     f" ({buy_ex_name.upper()} ➔ {sell_ex_name.upper()}): Nicht"
-                    f" genug USDT auf {buy_ex_name.upper()} (${current_usdt:.2f}"
-                    f" / ${self.fixed_trade_amount:.2f})"
+                    f" genug {required_quote_asset} auf {buy_ex_name.upper()}"
+                    f" (${current_quote_bal:.2f} / ${self.fixed_trade_amount:.2f})"
                 )
                 return
 
             # 2. Verkaufs-Guthaben prüfen (Ziel-Token auf der Verkaufs-Börse)
-            base_asset = symbol.split("/")[0]
             required_tokens = self.fixed_trade_amount / ask_buy
             current_tokens = self.check_live_balance(sell_ex_name, base_asset)
 
             if current_tokens < required_tokens:
                 print(
-                    f"ℹ️ [{symbol}] Spread {raw_margin:.2f}%"
+                    f"ℹ️ [{base_asset}] Spread {raw_margin:.2f}%"
                     f" ({buy_ex_name.upper()} ➔ {sell_ex_name.upper()}): Nicht"
                     f" genug {base_asset} auf {sell_ex_name.upper()}"
                     f" ({current_tokens:.4f} / {required_tokens:.4f})"
                 )
                 return
 
-            # 3. Orderbuch-Check für tatsächliche Ausführungspreise
-            ob_buy = buy_ex.fetch_order_book(symbol, limit=self.orderbook_limit)
+            # 3. Orderbuch-Check
+            ob_buy = buy_ex.fetch_order_book(
+                buy_symbol, limit=self.orderbook_limit
+            )
             ob_sell = sell_ex.fetch_order_book(
-                symbol, limit=self.orderbook_limit
+                sell_symbol, limit=self.orderbook_limit
             )
             if not ob_buy.get("asks") or not ob_sell.get("bids"):
                 return
@@ -203,16 +212,19 @@ class LiveArbitrageTrader:
             quantity = self.fixed_trade_amount / best_ask
 
             print("\n" + "🚨" * 25)
-            print(f"⚡ ECHTER LIVE-TRADE EXECUTION: {symbol}")
+            print(
+                f"⚡ ECHTER LIVE-TRADE EXECUTION: {base_asset} ({buy_symbol} ➔"
+                f" {sell_symbol})"
+            )
             print(
                 f"Kauf auf {buy_ex_name.upper()} @ ${best_ask:.6f} | Verkauf auf"
                 f" {sell_ex_name.upper()} @ ${best_bid:.6f}"
             )
             print("🚨" * 25 + "\n")
 
-            # Kauf-Order (IOC - Immediate or Cancel)
+            # Kauf-Order
             buy_order = buy_ex.create_order(
-                symbol=symbol,
+                symbol=buy_symbol,
                 type="limit",
                 side="buy",
                 amount=quantity,
@@ -227,13 +239,13 @@ class LiveArbitrageTrader:
             if filled_qty <= 0:
                 print(
                     f"⚠️ Buy Order auf {buy_ex_name.upper()} wurde nicht"
-                    " gefüllt (IOC storniert)."
+                    " gefüllt."
                 )
                 return
 
-            # Verkaufs-Order auf der zweiten Börse
+            # Verkaufs-Order
             sell_order = sell_ex.create_order(
-                symbol=symbol,
+                symbol=sell_symbol,
                 type="limit",
                 side="sell",
                 amount=filled_qty,
@@ -245,15 +257,17 @@ class LiveArbitrageTrader:
                 (filled_qty * best_ask) * (real_net_pct / 100), 6
             )
 
-            # Ergebnis in CSV protokollieren
+            # Protokollierung
             with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
                         "timestamp",
-                        "symbol",
+                        "base_asset",
                         "buy_ex",
                         "sell_ex",
+                        "buy_symbol",
+                        "sell_symbol",
                         "trade_amount",
                         "buy_price",
                         "sell_price",
@@ -264,9 +278,11 @@ class LiveArbitrageTrader:
                 writer.writerow(
                     {
                         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "symbol": symbol,
+                        "base_asset": base_asset,
                         "buy_ex": buy_ex_name.upper(),
                         "sell_ex": sell_ex_name.upper(),
+                        "buy_symbol": buy_symbol,
+                        "sell_symbol": sell_symbol,
                         "trade_amount": filled_qty * best_ask,
                         "buy_price": best_ask,
                         "sell_price": best_bid,
@@ -275,19 +291,8 @@ class LiveArbitrageTrader:
                     }
                 )
 
-            # 📲 Telegram-Benachrichtigung schicken
-            msg = (
-                f"🚀 *LIVE-TRADE AUSGEFÜHRT!*\n\n"
-                f"• *Pair:* `{symbol}`\n"
-                f"• *Kauf:* {buy_ex_name.upper()} @ `${best_ask:.6f}`\n"
-                f"• *Verkauf:* {sell_ex_name.upper()} @ `${best_bid:.6f}`\n"
-                f"• *Volumen:* `${filled_qty * best_ask:.2f}`\n"
-                f"• *Gewinn:* `+${profit_usdt:.4f}` USDT (`+{real_net_pct:.2f}%`)"
-            )
-            self.send_telegram_message(msg)
-
         except Exception as e:
-            print(f"❌ FEHLER beim Live-Trade {symbol}: {e}")
+            print(f"❌ FEHLER beim Live-Trade {base_asset}: {e}")
 
     def run(self, duration_hours=0.5, delay_seconds=3):
         print(f"\n🚀 Live Trading gestartet. Target: ${self.fixed_trade_amount}")
@@ -316,17 +321,17 @@ class LiveArbitrageTrader:
                     ex1, ex2 = active_exchanges[i], active_exchanges[j]
                     t1, t2 = all_tickers.get(ex1, {}), all_tickers.get(ex2, {})
 
-                    s1 = set(t1.keys())
-                    s2 = set(t2.keys())
+                    for base in self.whitelist_base_assets:
+                        quote1 = self.preferred_quote.get(ex1, "USDT")
+                        quote2 = self.preferred_quote.get(ex2, "USDT")
 
-                    common_symbols = s1.intersection(s2).intersection(
-                        self.whitelist
-                    )
+                        sym1 = f"{base}/{quote1}"
+                        sym2 = f"{base}/{quote2}"
 
-                    for symbol in common_symbols:
-                        self.execute_live_arbitrage(
-                            symbol, ex1, ex2, t1[symbol], t2[symbol]
-                        )
+                        if sym1 in t1 and sym2 in t2:
+                            self.execute_live_arbitrage(
+                                base, ex1, ex2, t1[sym1], t2[sym2], sym1, sym2
+                            )
 
             time.sleep(delay_seconds)
 
