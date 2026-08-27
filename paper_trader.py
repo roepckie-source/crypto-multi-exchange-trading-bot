@@ -489,7 +489,6 @@ class MultiExchangeTrader:
             else 0.0
         )
         best_trade = max(self.trade_profits) if self.trade_profits else 0.0
-        worst_trade = min(self.trade_profits) if self.trade_profits else 0.0
         win_rate = (
             (self.winning_trades / self.total_trades * 100)
             if self.total_trades > 0
@@ -514,6 +513,41 @@ class MultiExchangeTrader:
         print(f"⏱️ Laufzeit: {runtime_seconds / 60:.2f} Minuten")
         print("=" * 70)
 
+        # 📊 Detaillierte Auswertung nach Handelspaaren
+        if os.path.exists(self.csv_file):
+            try:
+                from collections import defaultdict
+
+                pair_stats = defaultdict(lambda: {"count": 0, "total_profit": 0.0, "avg_pct": []})
+
+                with open(self.csv_file, mode="r", encoding="utf-8") as f:
+                    reader = csv.DictWriter if False else csv.DictReader(f)
+                    for row in reader:
+                        symbol = row["symbol"]
+                        profit = float(row["profit_usdt"])
+                        pct = float(row["real_profit_pct"])
+
+                        pair_stats[symbol]["count"] += 1
+                        pair_stats[symbol]["total_profit"] += profit
+                        pair_stats[symbol]["avg_pct"].append(pct)
+
+                print("\n🏆 TOP-PERFORMER HANDELSPAARE:")
+                print(f"{'Symbol':<15} | {'Trades':<8} | {'Gesamtgewinn ($)':<18} | {'Ø Rendite (%)':<12}")
+                print("-" * 60)
+
+                sorted_pairs = sorted(
+                    pair_stats.items(), key=lambda x: x[1]["total_profit"], reverse=True
+                )
+
+                for symbol, stats in sorted_pairs:
+                    avg_pct = sum(stats["avg_pct"]) / len(stats["avg_pct"])
+                    print(
+                        f"{symbol:<15} | {stats['count']:<8} | ${stats['total_profit']:<17.4f} | {avg_pct:+.4f}%"
+                    )
+                print("=" * 70 + "\n")
+            except Exception as e:
+                print(f"⚠️ Fehler bei Paar-Analyse: {e}")
+                             
     def run_continuous(self, duration_hours=1, delay_seconds=3):
         print("\n🚀 Starte Trader [Paper Trading] mit exakten Gebühren & Latenz-Simulation...")
 
