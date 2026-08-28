@@ -156,16 +156,20 @@ def execute_arbitrage(buy_ex, sell_ex, symbol, buy_price, sell_price, spread):
         # Kauf ausführen
         buy_order = buy_ex.create_market_buy_order(symbol, trade_quantity)
         
-        # Dynamische Abfrage des tatsächlich verfügbaren Guthabens auf der Verkauf-Börse
-        time.sleep(1)
-        sell_balance = sell_ex.fetch_balance()
-        actual_coin_balance = sell_balance['free'].get(base_coin, 0.0)
-        
-        # Exakt die verbleibende/verfügbare Menge verkaufen (schützt vor "Insufficient balance" durch Gebühren)
+        # Guthaben-Abfrage mit Retry-Schleife (max. 5 Sekunden warten auf Guthaben-Einbuchung)
+        actual_coin_balance = 0.0
+        for _ in range(5):
+            time.sleep(1)
+            sell_balance = sell_ex.fetch_balance()
+            actual_coin_balance = sell_balance['free'].get(base_coin, 0.0) or sell_balance['total'].get(base_coin, 0.0)
+            if actual_coin_balance > 0:
+                break
+
+        # Exakt die verbleibende/verfügbare Menge verkaufen
         sell_quantity = min(trade_quantity, actual_coin_balance)
         
         if sell_quantity <= 0:
-            log_result(symbol, buy_ex.id, sell_ex.id, buy_price, sell_price, spread, "Fehler: Kein verfügbares Coin-Guthaben zum Verkaufen gefunden")
+            log_result(symbol, buy_ex.id, sell_ex.id, buy_price, sell_price, spread, f"Fehler: {base_coin}-Guthaben auf {sell_ex.id} nach Kauf weiterhin 0.0")
             return
 
         sell_order = sell_ex.create_market_sell_order(symbol, sell_quantity)
