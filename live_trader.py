@@ -13,8 +13,8 @@ RESULTS_FILE = "live_trading_results_real.csv"
 # Mindest-Profit-Schwelle in Prozent (z. B. 0.8% für Profit nach Gebühren)
 MIN_PROFIT_PCT = 0.8
 
-# Festgelegtes Handelsvolumen pro Arbitrage-Trade in USD
-TRADE_AMOUNT_USD = 10.0
+# Reduziertes Handelsvolumen pro Arbitrage-Trade in USD (passend für kleineres USDT-Guthaben)
+TRADE_AMOUNT_USD = 5.0
 
 # Überwachter Krypto-Korb (Erweiterte Handelspaare für mehr Chancen)
 SYMBOLS = [
