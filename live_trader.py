@@ -115,7 +115,10 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
         
         # Kaufe fehlende Menge per Market Order
         ticker = exchange.fetch_ticker(symbol)
-        buy_price = ticker['ask']
+        buy_price = ticker.get('ask', 0)
+        if not buy_price or buy_price <= 0:
+            return False, f"Fehler bei Auto-Kauf auf {exchange.id}: Kein gültiger Kaufpreis verfügbar"
+            
         usdt_needed = required_coin_amount * buy_price
         
         # Prüfe, ob genügend USDT auf der Börse liegen
@@ -126,7 +129,7 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
         # Autobuy ausführen
         buy_order = exchange.create_market_buy_order(symbol, required_coin_amount)
         print(f"✅ [{exchange.id}] Auto-Kauf erfolgreich: {buy_order.get('id', 'OK')}")
-        time.sleep(1) # Kurze Pause zum Einbuchen
+        time.sleep(2) # 2 Sekunden Pause, damit das Guthaben auf der Börse sicher gebucht ist
         return True, f"Auto-Kauf {base_coin} erfolgreich"
 
     except Exception as e:
@@ -151,7 +154,8 @@ def execute_arbitrage(buy_ex, sell_ex, symbol, buy_price, sell_price, spread):
         print(f"🚀 Starte Arbitrage: Kaufe {symbol} auf {buy_ex.id} & verkaufe auf {sell_ex.id}...")
         
         buy_order = buy_ex.create_market_buy_order(symbol, trade_quantity)
-        sell_order = sell_ex.create_market_sell_order(symbol, trade_quantity)
+        # 0.5% Puffer beim Verkauf, um Handelsgebühren-Abzüge abzufangen
+        sell_order = sell_ex.create_market_sell_order(symbol, trade_quantity * 0.995)
 
         status_msg = f"SUCCESS: Buy-ID {buy_order.get('id', 'N/A')} | Sell-ID {sell_order.get('id', 'N/A')}"
         log_result(symbol, buy_ex.id, sell_ex.id, buy_price, sell_price, spread, status_msg)
@@ -191,10 +195,11 @@ def main():
                 if buy_name == sell_name:
                     continue
 
-                buy_price = buy_ticker['ask']   # Günstigster Kaufpreis
-                sell_price = sell_ticker['bid'] # Höchster Verkaufspreis
+                buy_price = buy_ticker.get('ask')   # Günstigster Kaufpreis
+                sell_price = sell_ticker.get('bid') # Höchster Verkaufspreis
 
-                if buy_price <= 0:
+                # Hier ist der Fix gegen den TypeError (NoneType):
+                if not buy_price or not sell_price or buy_price <= 0 or sell_price <= 0:
                     continue
 
                 spread_pct = ((sell_price - buy_price) / buy_price) * 100.0
