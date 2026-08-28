@@ -41,10 +41,10 @@ def log_result(symbol, buy_ex, sell_ex, buy_price, sell_price, spread, status):
 
 
 # ==========================================
-# PROTOKOLL & RUN-AUSWERTUNG (PAPER-TRADER STYLE)
+# PROTOKOLL & RUN-AUSWERTUNG (MIT GEWINN IN USD)
 # ==========================================
 def generate_run_summary(run_start_time):
-    """ Analysiert die Ergebnisse des aktuellen Runs und gibt eine saubere Zusammenfassung aus. """
+    """ Analysiert die Ergebnisse des aktuellen Runs und gibt eine saubere Zusammenfassung inkl. USD-Gewinn aus. """
     print("\n" + "="*60)
     print("📊 LIVE TRADING RUN PROTOKOLL & AUSWERTUNG")
     print("="*60)
@@ -57,12 +57,12 @@ def generate_run_summary(run_start_time):
     successful_trades = 0
     failed_trades = 0
     total_spread_sum = 0.0
+    total_profit_usd = 0.0
     symbols_traded = []
 
     with open(RESULTS_FILE, mode="r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Filter auf Einträge, die seit diesem Run erstellt wurden
             try:
                 row_time = time.strptime(row["Timestamp"], "%Y-%m-%d %H:%M:%S")
                 if row_time >= run_start_time:
@@ -73,7 +73,12 @@ def generate_run_summary(run_start_time):
                     if "SUCCESS" in status:
                         successful_trades += 1
                         total_spread_sum += spread
-                        symbols_traded.append(f"{row['Symbol']} ({spread:.2f}%)")
+                        
+                        # Gewinn in USD für diesen Trade berechnen
+                        trade_profit = TRADE_AMOUNT_USD * (spread / 100.0)
+                        total_profit_usd += trade_profit
+                        
+                        symbols_traded.append(f"{row['Symbol']} ({spread:.2f}% / +${trade_profit:.3f})")
                     else:
                         failed_trades += 1
             except Exception:
@@ -87,6 +92,7 @@ def generate_run_summary(run_start_time):
     print(f"⚠️ Abgebrochene Orders:    {failed_trades}")
     if successful_trades > 0:
         print(f"📈 Ø Spread (Erfolgreich):  {avg_spread:.2f}%")
+        print(f"💵 Erzielter Gewinn (USD):  +${total_profit_usd:.4f} USD")
         print(f"🎯 Gehandelte Paare:        {', '.join(symbols_traded)}")
     else:
         print("ℹ️ Keine vollständigen Arbitrage-Ausführungen in diesem Durchlauf.")
@@ -256,7 +262,7 @@ def main():
 
     print("🏁 Live Trading Run abgeschlossen.")
     
-    # Auswertung am Ende des Runs erzeugen
+    # Auswertung inkl. Gewinn in Dollar erzeugen
     generate_run_summary(run_start_time)
 
 if __name__ == "__main__":
