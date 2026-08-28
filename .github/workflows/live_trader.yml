@@ -2,9 +2,8 @@ name: Live Arbitrage Bot
 
 on:
   schedule:
-    # Fügt eine automatische Ausführung alle 60 Minuten hinzu (immer zur voller Stunde)
     - cron: '0 * * * *'
-  workflow_dispatch: # Erlaubt weiterhin den manuellen Start über den GitHub Actions Tab
+  workflow_dispatch:
 
 jobs:
   trade:
@@ -23,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install ccxt
 
-      - name: Live Trader ausführen
+      - name: Rebalancing & Live Trader ausführen
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
@@ -33,4 +32,5 @@ jobs:
           BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
           BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
         run: |
+          python rebalancer.py
           python live_trader.py
