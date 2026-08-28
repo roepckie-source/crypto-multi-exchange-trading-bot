@@ -106,14 +106,13 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
     """
     try:
         balance = exchange.fetch_balance()
-        current_coin_balance = balance['total'].get(base_coin, 0.0)
+        current_coin_balance = balance['total'].get(base_coin, 0.0) or balance['free'].get(base_coin, 0.0)
 
         if current_coin_balance >= required_coin_amount:
             return True, f"Genügend {base_coin} vorhanden ({current_coin_balance:.4f})"
 
         print(f"🔄 [{exchange.id}] Automatische Coin-Beschaffung: Kauft {base_coin} gegen USDT...")
         
-        # Kaufe fehlende Menge per Market Order
         ticker = exchange.fetch_ticker(symbol)
         buy_price = ticker.get('ask', 0)
         if not buy_price or buy_price <= 0:
@@ -122,15 +121,31 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
         usdt_needed = required_coin_amount * buy_price
         
         # Prüfe, ob genügend USDT auf der Börse liegen
-        usdt_balance = balance['total'].get('USDT', 0.0)
+        usdt_balance = balance['total'].get('USDT', 0.0) or balance['free'].get('USDT', 0.0)
         if usdt_balance < usdt_needed:
             return False, f"Fehlgeschlagen: Zu wenig USDT auf {exchange.id} für Auto-Kauf ({usdt_balance:.2f} / {usdt_needed:.2f} USDT)"
 
-        # Autobuy ausführen
+        # Auto-Kauf versuchen
         buy_order = exchange.create_market_buy_order(symbol, required_coin_amount)
-        print(f"✅ [{exchange.id}] Auto-Kauf erfolgreich: {buy_order.get('id', 'OK')}")
-        time.sleep(2) # Pause, damit das Guthaben auf der Börse sicher gebucht ist
-        return True, f"Auto-Kauf {base_coin} erfolgreich"
+        order_id = buy_order.get('id')
+        print(f"✅ [{exchange.id}] Auto-Kauf gesendet ID: {order_id}")
+        
+        # Prüfen, ob der Kauf innerhalb von 4 Sekunden gefüllt wurde
+        for _ in range(4):
+            time.sleep(1)
+            bal = exchange.fetch_balance()
+            if (bal['free'].get(base_coin, 0.0) or bal['total'].get(base_coin, 0.0)) >= (required_coin_amount * 0.9):
+                return True, f"Auto-Kauf {base_coin} erfolgreich"
+
+        # Falls Order nach 4 Sek. noch im Orderbuch hängt: Stornieren
+        if order_id:
+            try:
+                exchange.cancel_order(order_id, symbol)
+                print(f"⚠️ [{exchange.id}] Auto-Kauf Order nicht sofort gefüllt – storniert.")
+            except Exception:
+                pass
+
+        return False, f"Auto-Kauf auf {exchange.id} konnte nicht sofort ausgeführt werden (Orderbuch zu dünn)"
 
     except Exception as e:
         return False, f"Fehler bei Auto-Kauf auf {exchange.id}: {str(e)}"
