@@ -103,6 +103,7 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
     """
     Prüft, ob genügend Coins für den Verkauf vorhanden sind.
     Falls nicht, kauft die Funktion automatisch den Coin gegen USDT.
+    Nutzt für sofortiges Matching einen leichten Limit-Aufschlag über Ask.
     """
     try:
         balance = exchange.fetch_balance()
@@ -125,8 +126,13 @@ def ensure_coin_balance(exchange, symbol, base_coin, required_coin_amount):
         if usdt_balance < usdt_needed:
             return False, f"Fehlgeschlagen: Zu wenig USDT auf {exchange.id} für Auto-Kauf ({usdt_balance:.2f} / {usdt_needed:.2f} USDT)"
 
-        # Auto-Kauf versuchen
-        buy_order = exchange.create_market_buy_order(symbol, required_coin_amount)
+        # Auto-Kauf versuchen: Limit-Buy mit 0.5% Aufschlag für sofortigen Taker-Fill bei illiquiden Paaren
+        limit_buy_price = buy_price * 1.005
+        try:
+            buy_order = exchange.create_limit_buy_order(symbol, required_coin_amount, limit_buy_price)
+        except Exception:
+            buy_order = exchange.create_market_buy_order(symbol, required_coin_amount)
+
         order_id = buy_order.get('id')
         print(f"✅ [{exchange.id}] Auto-Kauf gesendet ID: {order_id}")
         
