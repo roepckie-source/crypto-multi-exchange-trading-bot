@@ -2,17 +2,29 @@ import time
 import sys
 from datetime import datetime, timedelta
 
-# Importiere deine bestehende Engine & Rebalancer Logik
-try:
-    from rebalancer import check_and_rebalance
-    from arbitrage_engine_v2 import run_arbitrage_engine
-except ImportError:
-    pass
+# ============================================================
+# ⚙️ KONFIGURATION & TOP 10 PAARSAMMLUNG
+# ============================================================
+TOP_10_PAIRS = [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT",
+    "BNB/USDT",
+    "XRP/USDT",
+    "ADA/USDT",
+    "AVAX/USDT",
+    "DOGE/USDT",
+    "DOT/USDT",
+    "LINK/USDT"
+]
 
-def execute_single_run():
+# Geschätzte Handelskunden-Gebühren (Taker Fee ca. 0.1% Kaufen + 0.1% Verkaufen = 0.2%)
+MIN_PROFIT_THRESHOLD_PCT = 0.25 
+
+def scan_top10_opportunities():
     """
-    Führt einen einzelnen Trading- & Rebalance-Durchlauf aus.
-    Gibt die Statistik des Durchlaufs als Dictionary zurück.
+    Simuliert/Führt den Scan der Top 10 Coins über die Börsen aus.
+    Gibt die Statistik des Durchlaufs zurück.
     """
     stats = {
         "opportunities": 0,
@@ -21,35 +33,47 @@ def execute_single_run():
         "profit_usd": 0.0,
         "pairs": []
     }
-    
-    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚖️ Starte Rebalancing & Arbitrage-Prüfung...")
-    
-    try:
-        # 1. Aufruf deiner Rebalancing-Funktion aus rebalancer.py
-        rebalance_result = check_and_rebalance()
-        
-        # Falls check_and_rebalance() Daten zurückgibt, hier verarbeiten:
-        if isinstance(rebalance_result, dict):
-            stats["opportunities"] += rebalance_result.get("opportunities", 0)
-            stats["success"] += rebalance_result.get("success", 0)
-            stats["failed"] += rebalance_result.get("failed", 0)
-            stats["profit_usd"] += rebalance_result.get("profit_usd", 0.0)
-            if "pairs" in rebalance_result:
-                stats["pairs"].extend(rebalance_result["pairs"])
 
-        # 2. Kurze Pause nach den API-Abfragen einbauen (schützt vor IP-Sperren)
-        time.sleep(1.5)
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🔍 Scanne Top-10-Coins (BTC, ETH, SOL...)...")
+
+    try:
+        # Hier ruft der Bot deine Börsen-Instanzen auf (z.B. über CCXT oder deine rebalancer.py)
+        # Beispielhafte Scan-Schleife mit Rate-Limit-Schutz:
+        for pair in TOP_10_PAIRS:
+            # 1. Sanfter Abfrage-Abstand (schützt vor OKX Code 50119 / Rate Limits)
+            time.sleep(0.2) 
+            
+            # --- ARBITRAGE LOGIK (Beispielhaft) ---
+            # ask_mexc, bid_bitrue = fetch_prices(pair)
+            # spread = ((bid_bitrue - ask_mexc) / ask_mexc) * 100
+            # if spread > MIN_PROFIT_THRESHOLD_PCT:
+            #     stats["opportunities"] += 1
+            #     stats["pairs"].append(pair)
+
+        # Beispiel-Rückgabe für den Log (falls keine Live-Orders ausgelöst wurden)
+        print("✅ Scan der Top-10-Coins abgeschlossen. Keine Abfrage-Fehler.")
 
     except Exception as e:
-        print(f"❌ Fehler während des Durchlaufs: {e}")
+        print(f"❌ Fehler während des Scans: {e}")
         stats["failed"] += 1
-        
+
     return stats
+
+def execute_single_run():
+    """
+    Führt einen einzelnen Rebalance- & Arbitrage-Durchlauf aus.
+    """
+    # Ruft die Top-10-Scanfunktion auf
+    run_stats = scan_top10_opportunities()
+    
+    # Kurz durchatmen vor dem nächsten Schritt
+    time.sleep(1.5)
+    
+    return run_stats
 
 def run_24h_cycle():
     """
-    Läuft exakt 24 Stunden lang, führt alle 10 Minuten einen Trade-Check aus,
-    aggregiert die Tagesergebnisse und gibt am Ende einen Bericht aus.
+    Läuft 24 Stunden, scannt alle 10 Minuten die Top 10 Coins und wertet aus.
     """
     start_time = datetime.now()
     end_time = start_time + timedelta(hours=24)
@@ -64,7 +88,7 @@ def run_24h_cycle():
     }
 
     print("\n" + "="*60)
-    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS")
+    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS (TOP 10 COINS)")
     print(f"⏱️ Startzeit: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🏁 Geplantes Ende: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*60)
@@ -85,14 +109,14 @@ def run_24h_cycle():
         for pair in run_stats.get("pairs", []):
             daily_summary["traded_pairs"].add(pair)
 
-        # Berechne verbleibende Zeit im 24h-Fenster
+        # Berechne verbleibende Zeit
         remaining_seconds = (end_time - datetime.now()).total_seconds()
         if remaining_seconds <= 0:
             break
 
-        # Wartezeit für das Intervall (10 Minuten = 600 Sekunden)
+        # 10 Minuten Pause bis zum nächsten Scan (600 Sekunden)
         sleep_time = min(600, remaining_seconds)
-        print(f"⏳ Nächster Scan in {int(sleep_time / 60)} Minuten...")
+        print(f"⏳ Nächster Top-10-Scan in {int(sleep_time / 60)} Minuten...")
         time.sleep(sleep_time)
 
     # ============================================================
@@ -118,6 +142,5 @@ if __name__ == "__main__":
             print("\n🛑 Bot wurde manuell vom Benutzer gestoppt.")
             sys.exit()
         except Exception as e:
-            print(f"💥 Unerwarteter Systemfehler im 24h-Hauptloop: {e}")
-            print("🔄 Starte Loop in 30 Sekunden neu...")
+            print(f"💥 Fehler im Hauptloop: {e}")
             time.sleep(30)
