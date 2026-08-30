@@ -7,7 +7,6 @@ try:
     from rebalancer import check_and_rebalance
     from arbitrage_engine_v2 import run_arbitrage_engine
 except ImportError:
-    # Falls der Import abweicht, passe die Import-Namen an deine Dateien an
     pass
 
 def execute_single_run():
@@ -26,13 +25,20 @@ def execute_single_run():
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚖️ Starte Rebalancing & Arbitrage-Prüfung...")
     
     try:
-        # 1. Rebalancing & Markt-Scan durchführen
-        # Hier ruft das Skript deine V2-Engine / Rebalancer auf:
-        # run_results = run_arbitrage_engine() 
+        # 1. Aufruf deiner Rebalancing-Funktion aus rebalancer.py
+        rebalance_result = check_and_rebalance()
         
-        # HINWEIS: Falls deine Logik direkt über den Aufruf aus rebalancer.py läuft,
-        # werden die ermittelten Trades hier verarbeitet.
-        pass
+        # Falls check_and_rebalance() Daten zurückgibt, hier verarbeiten:
+        if isinstance(rebalance_result, dict):
+            stats["opportunities"] += rebalance_result.get("opportunities", 0)
+            stats["success"] += rebalance_result.get("success", 0)
+            stats["failed"] += rebalance_result.get("failed", 0)
+            stats["profit_usd"] += rebalance_result.get("profit_usd", 0.0)
+            if "pairs" in rebalance_result:
+                stats["pairs"].extend(rebalance_result["pairs"])
+
+        # 2. Kurze Pause nach den API-Abfragen einbauen (schützt vor IP-Sperren)
+        time.sleep(1.5)
 
     except Exception as e:
         print(f"❌ Fehler während des Durchlaufs: {e}")
@@ -58,7 +64,7 @@ def run_24h_cycle():
     }
 
     print("\n" + "="*60)
-    print(f"🚀 STARTE 24-STUNDEN TRADING-ZYKLUS")
+    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS")
     print(f"⏱️ Startzeit: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🏁 Geplantes Ende: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*60)
@@ -105,7 +111,6 @@ def run_24h_cycle():
     print("="*60 + "\n")
 
 if __name__ == "__main__":
-    # Unendliche Schleife: Läuft 24h, wertet aus und startet sofort den nächsten Tag
     while True:
         try:
             run_24h_cycle()
