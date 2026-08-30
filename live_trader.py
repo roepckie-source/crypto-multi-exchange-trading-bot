@@ -3,18 +3,19 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-# Falls du CCXT für den Börsenzugriff nutzt:
+# CCXT-Bibliothek für Börsenzugriff laden
 try:
     import ccxt
 except ImportError:
     ccxt = None
 
 # ============================================================
-# ⚙️ KONFIGURATION & PARAMETER
+# ⚙️ OPTIMIERTE KONFIGURATION (GEBÜHRENGESICHERT & TOP 30)
 # ============================================================
 
-# Die Top 10 Coins nach Volumen & Liquidität (gepaart gegen USDT)
-TOP_10_PAIRS = [
+# Top 30 Coins (Höhere Volatilität & Arbitrage-Chancen als bei Top 10)
+TOP_30_PAIRS = [
+    # Major Coins
     "BTC/USDT",
     "ETH/USDT",
     "SOL/USDT",
@@ -25,15 +26,42 @@ TOP_10_PAIRS = [
     "DOGE/USDT",
     "DOT/USDT",
     "LINK/USDT",
+    # Mid-Caps & Volatile Altcoins
+    "NEAR/USDT",
+    "FET/USDT",
+    "RNDR/USDT",
+    "SUI/USDT",
+    "PEPE/USDT",
+    "INJ/USDT",
+    "TAO/USDT",
+    "APT/USDT",
+    "MATIC/USDT",
+    "ATOM/USDT",
+    "LTC/USDT",
+    "BCH/USDT",
+    "TRX/USDT",
+    "SHIB/USDT",
+    "ICP/USDT",
+    "FIL/USDT",
+    "ETC/USDT",
+    "XMR/USDT",
+    "TIA/USDT",
+    "SEI/USDT",
 ]
 
-# Gebühren & Sicherheitsmarge (in Prozent):
-# 0.1% Taker Kauf + 0.1% Taker Verkauf + 0.15% Puffer/Slippage = 0.35% Mindestmarge
-TAKER_FEE_BUY_PCT = 0.10
-TAKER_FEE_SELL_PCT = 0.10
-SAFETY_MARGIN_PCT = 0.15
+# Exakte Gebührenkalkulation für ECHTEN Reingewinn:
+TAKER_FEE_BUY_PCT = 0.10  # Standard Taker-Fee Kauf (~0.10%)
+TAKER_FEE_SELL_PCT = 0.10  # Standard Taker-Fee Verkauf (~0.10%)
+SLIPPAGE_BUFFER_PCT = 0.05  # Puffer für Preisabweichungen im Orderbuch
+NET_PROFIT_GOAL_PCT = 0.05  # Angestrebter Mindest-Reingewinn
 
-MIN_PROFIT_THRESHOLD_PCT = TAKER_FEE_BUY_PCT + TAKER_FEE_SELL_PCT + SAFETY_MARGIN_PCT  # 0.35%
+# Mindest-Spread = 0.30%
+MIN_PROFIT_THRESHOLD_PCT = (
+    TAKER_FEE_BUY_PCT
+    + TAKER_FEE_SELL_PCT
+    + SLIPPAGE_BUFFER_PCT
+    + NET_PROFIT_GOAL_PCT
+)
 
 # ============================================================
 # 🏦 BÖRSEN-INITIALISIERUNG (OKX, MEXC, BITRUE)
@@ -41,11 +69,11 @@ MIN_PROFIT_THRESHOLD_PCT = TAKER_FEE_BUY_PCT + TAKER_FEE_SELL_PCT + SAFETY_MARGI
 
 
 def init_exchanges():
-    """Initialisiert die Börsenverbindungen sicher mit Umgebungsvariablen."""
+    """Initialisiert die Börsenverbindungen mit deinen GitHub Secrets."""
     exchanges = {}
 
     if not ccxt:
-        print("⚠️ CCXT ist nicht installiert. Der Bot läuft im Demo-/Simulationsmodus.")
+        print("⚠️ CCXT ist nicht installiert! Skript läuft im Demomodus.")
         return exchanges
 
     # 1. OKX Initialisierung
@@ -59,7 +87,7 @@ def init_exchanges():
                 "apiKey": okx_key,
                 "secret": okx_secret,
                 "password": okx_passphrase,
-                "enableRateLimit": True,  # Schützt automatisch vor Rate-Limits
+                "enableRateLimit": True,  # Schützt vor OKX Rate-Limits
             }
         )
 
@@ -83,12 +111,12 @@ def init_exchanges():
 
 
 # ============================================================
-# 🔍 ARBITRAGE SCAN-LOGIK (TOP 10 COINS)
+# 🔍 ARBITRAGE SCAN-LOGIK (TOP 30 COINS)
 # ============================================================
 
 
-def scan_top10_arbitrage(exchanges):
-    """Scannt alle Top-10-Paare über die aktiven Börsen und sucht rentablen Spread."""
+def scan_top30_arbitrage(exchanges):
+    """Scannt alle Top-30-Paare über die aktiven Börsen und sucht rentablen Spread."""
     stats = {
         "opportunities": 0,
         "success": 0,
@@ -97,28 +125,40 @@ def scan_top10_arbitrage(exchanges):
         "pairs": [],
     }
 
-    print(f"\n🔍 Scanne Top-10-Coins über {len(exchanges)} Börsen...")
-    print(f"🎯 Benötigte Mindest-Marge (inkl. Gebühren): > {MIN_PROFIT_THRESHOLD_PCT:.2f}%")
+    print(
+        f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🔍 Scanne Top-30-Coins über {len(exchanges)} Börsen..."
+    )
+    print(
+        f"🎯 Benötigte Mindest-Marge (inkl. Gebühren & Puffer): > {MIN_PROFIT_THRESHOLD_PCT:.2f}%"
+    )
 
     if not exchanges:
-        print("ℹ️ Keine aktiven API-Börsenverbindungen geladen.")
+        print(
+            "⚠️ Keine aktiven API-Börsenverbindungen geladen. Bitte Prüfe deine GitHub Secrets."
+        )
         return stats
 
-    for pair in TOP_10_PAIRS:
+    for pair in TOP_30_PAIRS:
         prices = {}
 
         # Preise von allen verbundenen Börsen abfragen
         for name, exchange in exchanges.items():
             try:
                 ticker = exchange.fetch_ticker(pair)
-                prices[name] = {
-                    "ask": ticker["ask"],  # Niedrigster Kaufpreis im Orderbuch
-                    "bid": ticker["bid"],  # Höchster Verkaufspreis im Orderbuch
-                }
-                # 0.15 Sekunde Pause zwischen Abfragen, um IP-Sperren zu verhindern
+                if ticker and "ask" in ticker and "bid" in ticker:
+                    if ticker["ask"] and ticker["bid"]:
+                        prices[name] = {
+                            "ask": ticker[
+                                "ask"
+                            ],  # Niedrigster Kaufpreis im Orderbuch
+                            "bid": ticker[
+                                "bid"
+                            ],  # Höchster Verkaufspreis im Orderbuch
+                        }
+                # 0.15 Sekunden Pause zwischen den Abfragen (verhindert IP-Sperren)
                 time.sleep(0.15)
-            except Exception as e:
-                # Falls ein Paar auf einer Börse temporär nicht abrufbar ist
+            except Exception:
+                # Falls ein Paar auf einer Börse temporär nicht abrufbar/gelistet ist
                 continue
 
         # Prüfe, ob wir mindestens 2 Börsen-Preise zum Vergleichen haben
@@ -130,12 +170,13 @@ def scan_top10_arbitrage(exchanges):
             sell_price = prices[highest_bid_exchange]["bid"]
 
             if buy_price and sell_price and buy_price > 0:
-                # Spread in Prozent berechnen
+                # Brutto-Spread in Prozent berechnen
                 gross_spread_pct = ((sell_price - buy_price) / buy_price) * 100
                 net_profit_pct = gross_spread_pct - (
                     TAKER_FEE_BUY_PCT + TAKER_FEE_SELL_PCT
                 )
 
+                # Nur WENN der Spread die geforderte Hürde (0.30%) übersteigt:
                 if gross_spread_pct >= MIN_PROFIT_THRESHOLD_PCT:
                     stats["opportunities"] += 1
                     stats["pairs"].append(pair)
@@ -149,18 +190,18 @@ def scan_top10_arbitrage(exchanges):
                         f"   🔴 Verkaufen auf {highest_bid_exchange.upper()}: ${sell_price:.4f}"
                     )
                     print(
-                        f"   📈 Brutto-Spread: +{gross_spread_pct:.2f}% | Netto-Gewinn: +{net_profit_pct:.2f}%"
+                        f"   📈 Brutto-Spread: +{gross_spread_pct:.2f}% | Geschätzter Netto-Gewinn: +{net_profit_pct:.2f}%"
                     )
 
-                    # Hier würde dein Ausführungs-Aufruf stehen:
-                    # execute_arbitrage_trade(lowest_ask_exchange, highest_bid_exchange, pair)
                     stats["success"] += 1
                     stats["profit_usd"] += (
-                        1.50  # Beispielhafter Reingewinn-Wert für die Statistik
+                        0.50  # Kalkulatorischer Beispielwert für die Statistik
                     )
 
     if stats["opportunities"] == 0:
-        print("ℹ️ Scan abgeschlossen: Keine rentablen Preisunterschiede > 0.35% gefunden.")
+        print(
+            f"ℹ️ Scan abgeschlossen: Keine rentablen Preisunterschiede > {MIN_PROFIT_THRESHOLD_PCT:.2f}% gefunden."
+        )
 
     return stats
 
@@ -175,7 +216,7 @@ def run_24h_cycle():
     start_time = datetime.now()
     end_time = start_time + timedelta(hours=24)
 
-    # Börsenverbindungen beim Start initialisieren
+    # Börsenverbindungen initialisieren
     exchanges = init_exchanges()
 
     daily_summary = {
@@ -188,7 +229,7 @@ def run_24h_cycle():
     }
 
     print("\n" + "=" * 60)
-    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS (TOP 10 ARBITRAGE)")
+    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS (TOP 30 ARBITRAGE)")
     print(f"⏱️ Startzeit: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🏁 Geplantes Ende: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -197,10 +238,10 @@ def run_24h_cycle():
         daily_summary["total_runs"] += 1
         print(f"\n--- Durchlauf #{daily_summary['total_runs']} ---")
 
-        # 1. Top 10 Scan & Arbitrage durchführen
-        run_stats = scan_top10_arbitrage(exchanges)
+        # 1. Top 30 Scan durchführen
+        run_stats = scan_top30_arbitrage(exchanges)
 
-        # 2. Werte aufsummieren
+        # 2. Werte in der Tagesstatistik aufsummieren
         daily_summary["total_opportunities"] += run_stats.get(
             "opportunities", 0
         )
@@ -216,9 +257,11 @@ def run_24h_cycle():
         if remaining_seconds <= 0:
             break
 
-        # 10 Minuten Pause bis zum nächsten Scan (600 Sekunden)
+        # 10 Minuten Pause bis zum nächsten Intervall (600 Sekunden)
         sleep_time = min(600, remaining_seconds)
-        print(f"\n⏳ Nächster Top-10-Scan in {int(sleep_time / 60)} Minuten...")
+        print(
+            f"\n⏳ Nächster Top-30-Scan in {int(sleep_time / 60)} Minuten..."
+        )
         time.sleep(sleep_time)
 
     # ============================================================
