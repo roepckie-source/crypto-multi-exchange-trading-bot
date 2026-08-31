@@ -10,10 +10,10 @@ except ImportError:
     ccxt = None
 
 # ============================================================
-# ⚙️ OPTIMIERTE KONFIGURATION (GEBÜHRENGESICHERT & TOP 30)
+# ⚙️ OPTIMIERTE KONFIGURATION (GEBÜHRENGESICHERT & SCHNELLER SCAN)
 # ============================================================
 
-# Top 30 Coins (Höhere Volatilität & Arbitrage-Chancen als bei Top 10)
+# Top 30 Coins für maximale Volatilität & Arbitrage-Chancen
 TOP_30_PAIRS = [
     # Major Coins
     "BTC/USDT",
@@ -63,6 +63,9 @@ MIN_PROFIT_THRESHOLD_PCT = (
     + NET_PROFIT_GOAL_PCT
 )
 
+# Handelsvolumen pro Trade (in USDT)
+TRADE_AMOUNT_USDT = 10.0
+
 # ============================================================
 # 🏦 BÖRSEN-INITIALISIERUNG (OKX, MEXC, BITRUE)
 # ============================================================
@@ -82,41 +85,94 @@ def init_exchanges():
     okx_passphrase = os.getenv("OKX_PASSPHRASE")
 
     if okx_key and okx_secret and okx_passphrase:
-        exchanges["okx"] = ccxt.okx(
-            {
-                "apiKey": okx_key,
-                "secret": okx_secret,
-                "password": okx_passphrase,
-                "enableRateLimit": True,  # Schützt vor OKX Rate-Limits
-            }
-        )
+        try:
+            exchanges["okx"] = ccxt.okx(
+                {
+                    "apiKey": okx_key,
+                    "secret": okx_secret,
+                    "password": okx_passphrase,
+                    "enableRateLimit": True,
+                }
+            )
+        except Exception as e:
+            print(f"⚠️ OKX konnte nicht initialisiert werden: {e}")
 
     # 2. MEXC Initialisierung
     mexc_key = os.getenv("MEXC_API_KEY")
     mexc_secret = os.getenv("MEXC_API_SECRET")
     if mexc_key and mexc_secret:
-        exchanges["mexc"] = ccxt.mexc(
-            {"apiKey": mexc_key, "secret": mexc_secret, "enableRateLimit": True}
-        )
+        try:
+            exchanges["mexc"] = ccxt.mexc(
+                {"apiKey": mexc_key, "secret": mexc_secret, "enableRateLimit": True}
+            )
+        except Exception as e:
+            print(f"⚠️ MEXC konnte nicht initialisiert werden: {e}")
 
     # 3. BITRUE Initialisierung
     bitrue_key = os.getenv("BITRUE_API_KEY")
     bitrue_secret = os.getenv("BITRUE_API_SECRET")
     if bitrue_key and bitrue_secret:
-        exchanges["bitrue"] = ccxt.bitrue(
-            {"apiKey": bitrue_key, "secret": bitrue_secret, "enableRateLimit": True}
-        )
+        try:
+            exchanges["bitrue"] = ccxt.bitrue(
+                {
+                    "apiKey": bitrue_key,
+                    "secret": bitrue_secret,
+                    "enableRateLimit": True,
+                }
+            )
+        except Exception as e:
+            print(f"⚠️ BITRUE konnte nicht initialisiert werden: {e}")
 
     return exchanges
 
 
 # ============================================================
-# 🔍 ARBITRAGE SCAN-LOGIK (TOP 30 COINS)
+# ⚡ TRADE-AUSFÜHRUNG (KAUF & VERKAUF PARALLEL)
+# ============================================================
+
+
+def execute_arbitrage(
+    buy_exchange, sell_exchange, pair, buy_price, sell_price
+):
+    """Führt eine Arbitrage-Order auf beiden Börsen aus."""
+    try:
+        # Erforderliche Menge berechnen
+        amount = TRADE_AMOUNT_USDT / buy_price
+
+        print(
+            f"\n🚀 STARTE TRADE-AUSFÜHRUNG: {pair} | Volumen: ${TRADE_AMOUNT_USDT} USDT ({amount:.6f} Coins)"
+        )
+
+        # 1. Market Buy Order platzieren
+        buy_order = buy_exchange.create_market_buy_order(pair, amount)
+        buy_id = buy_order.get("id", "N/A")
+
+        # 2. Market Sell Order platzieren
+        sell_order = sell_exchange.create_market_sell_order(pair, amount)
+        sell_id = sell_order.get("id", "N/A")
+
+        est_profit = (
+            TRADE_AMOUNT_USDT * (sell_price - buy_price) / buy_price
+        ) - (TRADE_AMOUNT_USDT * 0.002)
+
+        print(f"✅ TRADE ERFOLGREICH AUSGEFÜHRT!")
+        print(f"   🟢 Kauf-Order ({buy_exchange.id.upper()}): ID {buy_id}")
+        print(f"   🔴 Verkauf-Order ({sell_exchange.id.upper()}): ID {sell_id}")
+        print(f"   💰 Geschätzter Netto-Gewinn: +${est_profit:.4f} USD")
+
+        return True, est_profit
+    except Exception as e:
+        print(f"❌ FEHLER bei der Order-Ausführung auf {pair}: {e}")
+        return False, 0.0
+
+
+# ============================================================
+# 🔍 ARBITRAGE SCAN-LOGIK
 # ============================================================
 
 
 def scan_top30_arbitrage(exchanges):
-    """Scannt alle Top-30-Paare über die aktiven Börsen und sucht rentablen Spread."""
+    """Scannt alle Top-30-Paare über die aktiven Börsen und führt Trades aus."""
     stats = {
         "opportunities": 0,
         "success": 0,
@@ -128,13 +184,10 @@ def scan_top30_arbitrage(exchanges):
     print(
         f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🔍 Scanne Top-30-Coins über {len(exchanges)} Börsen..."
     )
-    print(
-        f"🎯 Benötigte Mindest-Marge (inkl. Gebühren & Puffer): > {MIN_PROFIT_THRESHOLD_PCT:.2f}%"
-    )
 
     if not exchanges:
         print(
-            "⚠️ Keine aktiven API-Börsenverbindungen geladen. Bitte Prüfe deine GitHub Secrets."
+            "⚠️ Keine aktiven API-Börsenverbindungen geladen. Bitte prüfe deine GitHub Secrets."
         )
         return stats
 
@@ -145,78 +198,89 @@ def scan_top30_arbitrage(exchanges):
         for name, exchange in exchanges.items():
             try:
                 ticker = exchange.fetch_ticker(pair)
-                if ticker and "ask" in ticker and "bid" in ticker:
-                    if ticker["ask"] and ticker["bid"]:
-                        prices[name] = {
-                            "ask": ticker[
-                                "ask"
-                            ],  # Niedrigster Kaufpreis im Orderbuch
-                            "bid": ticker[
-                                "bid"
-                            ],  # Höchster Verkaufspreis im Orderbuch
-                        }
-                # 0.15 Sekunden Pause zwischen den Abfragen (verhindert IP-Sperren)
-                time.sleep(0.15)
+                if (
+                    ticker
+                    and "ask" in ticker
+                    and "bid" in ticker
+                    and ticker["ask"]
+                    and ticker["bid"]
+                ):
+                    prices[name] = {
+                        "ask": float(ticker["ask"]),
+                        "bid": float(ticker["bid"]),
+                    }
+                time.sleep(0.05)  # Kurze Pause für API Rate-Limits
             except Exception:
-                # Falls ein Paar auf einer Börse temporär nicht abrufbar/gelistet ist
                 continue
 
-        # Prüfe, ob wir mindestens 2 Börsen-Preise zum Vergleichen haben
+        # Vergleichen, wenn mindestens 2 Börsen Daten geliefert haben
         if len(prices) >= 2:
-            lowest_ask_exchange = min(prices, key=lambda x: prices[x]["ask"])
-            highest_bid_exchange = max(prices, key=lambda x: prices[x]["bid"])
+            lowest_ask_exchange_name = min(
+                prices, key=lambda x: prices[x]["ask"]
+            )
+            highest_bid_exchange_name = max(
+                prices, key=lambda x: prices[x]["bid"]
+            )
 
-            buy_price = prices[lowest_ask_exchange]["ask"]
-            sell_price = prices[highest_bid_exchange]["bid"]
+            buy_price = prices[lowest_ask_exchange_name]["ask"]
+            sell_price = prices[highest_bid_exchange_name]["bid"]
 
-            if buy_price and sell_price and buy_price > 0:
-                # Brutto-Spread in Prozent berechnen
+            if buy_price > 0 and sell_price > 0:
                 gross_spread_pct = ((sell_price - buy_price) / buy_price) * 100
                 net_profit_pct = gross_spread_pct - (
                     TAKER_FEE_BUY_PCT + TAKER_FEE_SELL_PCT
                 )
 
-                # Nur WENN der Spread die geforderte Hürde (0.30%) übersteigt:
+                # Bei ausreichendem Spread Trigger auslösen:
                 if gross_spread_pct >= MIN_PROFIT_THRESHOLD_PCT:
                     stats["opportunities"] += 1
                     stats["pairs"].append(pair)
+
+                    # Preise präzise formatieren (wichtig bei Memecoins wie PEPE)
+                    price_fmt = ".8f" if buy_price < 0.001 else ".4f"
+
+                    print(f"\n⚡ RENTABLE CHANCE GEFUNDEN! Pair: {pair}")
                     print(
-                        f"\n⚡ RENTABLE CHANCE GEFUNDEN! Pair: {pair}"
+                        f"   🟢 Kaufen auf {lowest_ask_exchange_name.upper()}: ${buy_price:{price_fmt}}"
                     )
                     print(
-                        f"   🟢 Kaufen auf {lowest_ask_exchange.upper()}: ${buy_price:.4f}"
+                        f"   🔴 Verkaufen auf {highest_bid_exchange_name.upper()}: ${sell_price:{price_fmt}}"
                     )
                     print(
-                        f"   🔴 Verkaufen auf {highest_bid_exchange.upper()}: ${sell_price:.4f}"
-                    )
-                    print(
-                        f"   📈 Brutto-Spread: +{gross_spread_pct:.2f}% | Geschätzter Netto-Gewinn: +{net_profit_pct:.2f}%"
+                        f"   📈 Brutto-Spread: +{gross_spread_pct:.2f}% | Netto-Gewinn: +{net_profit_pct:.2f}%"
                     )
 
-                    stats["success"] += 1
-                    stats["profit_usd"] += (
-                        0.50  # Kalkulatorischer Beispielwert für die Statistik
+                    # Realen Trade starten
+                    buy_ex = exchanges[lowest_ask_exchange_name]
+                    sell_ex = exchanges[highest_bid_exchange_name]
+
+                    success, profit = execute_arbitrage(
+                        buy_ex, sell_ex, pair, buy_price, sell_price
                     )
+                    if success:
+                        stats["success"] += 1
+                        stats["profit_usd"] += profit
+                    else:
+                        stats["failed"] += 1
 
     if stats["opportunities"] == 0:
         print(
-            f"ℹ️ Scan abgeschlossen: Keine rentablen Preisunterschiede > {MIN_PROFIT_THRESHOLD_PCT:.2f}% gefunden."
+            f"ℹ️ Scan abgeschlossen: Keine Preisunterschiede > {MIN_PROFIT_THRESHOLD_PCT:.2f}%."
         )
 
     return stats
 
 
 # ============================================================
-# 🔄 24-STUNDEN HAUPTSCHLEIFE
+# 🔄 HAUPTSCHLEIFE MIT SCHNELLEN SCANS (60 SEKUNDEN)
 # ============================================================
 
 
 def run_24h_cycle():
-    """Läuft 24 Stunden lang, führt alle 10 Minuten einen Scan durch und erstellt am Ende einen Tagesbericht."""
+    """Läuft im Dauerbetrieb und scannt alle 60 Sekunden."""
     start_time = datetime.now()
     end_time = start_time + timedelta(hours=24)
 
-    # Börsenverbindungen initialisieren
     exchanges = init_exchanges()
 
     daily_summary = {
@@ -229,19 +293,17 @@ def run_24h_cycle():
     }
 
     print("\n" + "=" * 60)
-    print("🚀 STARTE 24-STUNDEN TRADING-ZYKLUS (TOP 30 ARBITRAGE)")
+    print("🚀 STARTE SCHNELLEN TRADING-ZYKLUS (TOP 30 ARBITRAGE)")
     print(f"⏱️ Startzeit: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"🏁 Geplantes Ende: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏱️ Scan-Intervall: 60 Sekunden")
     print("=" * 60)
 
     while datetime.now() < end_time:
         daily_summary["total_runs"] += 1
         print(f"\n--- Durchlauf #{daily_summary['total_runs']} ---")
 
-        # 1. Top 30 Scan durchführen
         run_stats = scan_top30_arbitrage(exchanges)
 
-        # 2. Werte in der Tagesstatistik aufsummieren
         daily_summary["total_opportunities"] += run_stats.get(
             "opportunities", 0
         )
@@ -252,36 +314,26 @@ def run_24h_cycle():
         for pair in run_stats.get("pairs", []):
             daily_summary["traded_pairs"].add(pair)
 
-        # Berechne verbleibende Zeit im 24-Stunden-Fenster
         remaining_seconds = (end_time - datetime.now()).total_seconds()
         if remaining_seconds <= 0:
             break
 
-        # 10 Minuten Pause bis zum nächsten Intervall (600 Sekunden)
-        sleep_time = min(600, remaining_seconds)
+        # KÜRZERES INTERVALL: 60 Sekunden statt 600 Sekunden
+        sleep_time = min(60, remaining_seconds)
         print(
-            f"\n⏳ Nächster Top-30-Scan in {int(sleep_time / 60)} Minuten..."
+            f"⏳ Nächster Top-30-Scan in {int(sleep_time)} Sekunden..."
         )
         time.sleep(sleep_time)
 
-    # ============================================================
-    # 📊 24-STUNDEN TAGESAUSWERTUNG
-    # ============================================================
+    # 📊 Tagesbericht
     print("\n" + "=" * 60)
-    print("📊 LIVE-HANDEL 24-STUNDEN TAGESBERICHT & AUSWERTUNG")
+    print("📊 LIVE-HANDEL TAGESBERICHT")
     print("=" * 60)
-    print(
-        f"⏱️ Zeitspanne:           {start_time.strftime('%Y-%m-%d %H:%M')} bis {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    )
     print(f"🔄 Absolvierte Runs:     {daily_summary['total_runs']}")
     print(f"🔍 Gefundene Chancen:    {daily_summary['total_opportunities']}")
     print(f"✅ Erfolgreiche Trades:  {daily_summary['total_success']}")
-    print(f"⚠️ Abgebrochene Orders:  {daily_summary['total_failed']}")
     print(
         f"💵 Gesamtgewinn (USD):   +${daily_summary['total_profit_usd']:.4f} USD"
-    )
-    print(
-        f"🎯 Gehandelte Paare:     {', '.join(daily_summary['traded_pairs']) if daily_summary['traded_pairs'] else 'Keine'}"
     )
     print("=" * 60 + "\n")
 
@@ -291,9 +343,8 @@ if __name__ == "__main__":
         try:
             run_24h_cycle()
         except KeyboardInterrupt:
-            print("\n🛑 Bot wurde manuell vom Benutzer gestoppt.")
+            print("\n🛑 Bot manuell gestoppt.")
             sys.exit()
         except Exception as e:
-            print(f"💥 Unerwarteter Systemfehler im Hauptloop: {e}")
-            print("🔄 Starte Loop in 30 Sekunden neu...")
+            print(f"💥 Fehler im Hauptloop: {e}")
             time.sleep(30)
