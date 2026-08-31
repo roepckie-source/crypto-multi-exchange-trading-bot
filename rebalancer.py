@@ -2,114 +2,166 @@ import os
 import sys
 import time
 
-# CCXT-Bibliothek für Börsenzugriff laden
 try:
     import ccxt
 except ImportError:
     ccxt = None
 
 # ============================================================
-# ⚙️ BÖRSEN-INITIALISIERUNG (REBALANCER)
+# ⚙️ REBALANCER KONFIGURATION
+# ============================================================
+
+# True = Berechnet Transfers & simuliert nur (SICHER).
+# False = Führt echte On-Chain Auszahlungen durch (ACHTUNG: Auszahlungs-Rechte beim API-Key nötig!)
+SIMULATION_MODE = True
+
+# Mindestabweichung vom Zielguthaben (in USD), ab der ein Transfer ausgelöst wird
+MIN_REBALANCE_THRESHOLD_USD = 10.0
+
+# Bevorzugtes Blockchain-Netzwerk für USDT-Transfers ('TRX' für TRC20, 'MATIC' für Polygon)
+PREFERRED_NETWORK = "TRX"
+
+# ============================================================
+# 🏦 BÖRSEN-INITIALISIERUNG
 # ============================================================
 
 
 def init_exchanges():
     """Initialisiert die Börsenverbindungen für das Rebalancing."""
     exchanges = {}
-
     if not ccxt:
         print("⚠️ CCXT ist nicht installiert!")
         return exchanges
 
-    # 1. OKX Initialisierung (Inklusive EEA-Fix für EU-Konten)
-    okx_key = os.getenv("OKX_API_KEY")
-    okx_secret = os.getenv("OKX_API_SECRET")
-    okx_passphrase = os.getenv("OKX_PASSPHRASE")
-
-    if okx_key and okx_secret and okx_passphrase:
+    # OKX (Inklusive EEA-Fix für EU-Accounts)
+    okx_key, okx_sec, okx_pass = (
+        os.getenv("OKX_API_KEY"),
+        os.getenv("OKX_API_SECRET"),
+        os.getenv("OKX_PASSPHRASE"),
+    )
+    if okx_key and okx_sec and okx_pass:
         try:
             exchanges["okx"] = ccxt.okx(
                 {
                     "apiKey": okx_key,
-                    "secret": okx_secret,
-                    "password": okx_passphrase,
-                    "hostname": "my.okx.com",  # Fix für EU/EEA-Accounts (Fehler 50119)
+                    "secret": okx_sec,
+                    "password": okx_pass,
+                    "hostname": "my.okx.com",
                     "enableRateLimit": True,
                 }
             )
         except Exception as e:
-            print(f"❌ Fehler bei der Initialisierung von OKX: {e}")
+            print(f"❌ Fehler bei OKX: {e}")
 
-    # 2. MEXC Initialisierung
-    mexc_key = os.getenv("MEXC_API_KEY")
-    mexc_secret = os.getenv("MEXC_API_SECRET")
-
-    if mexc_key and mexc_secret:
+    # MEXC
+    mexc_key, mexc_sec = os.getenv("MEXC_API_KEY"), os.getenv("MEXC_API_SECRET")
+    if mexc_key and mexc_sec:
         try:
             exchanges["mexc"] = ccxt.mexc(
-                {"apiKey": mexc_key, "secret": mexc_secret, "enableRateLimit": True}
+                {"apiKey": mexc_key, "secret": mexc_sec, "enableRateLimit": True}
             )
         except Exception as e:
-            print(f"❌ Fehler bei der Initialisierung von MEXC: {e}")
+            print(f"❌ Fehler bei MEXC: {e}")
 
-    # 3. BITRUE Initialisierung
-    bitrue_key = os.getenv("BITRUE_API_KEY")
-    bitrue_secret = os.getenv("BITRUE_API_SECRET")
-
-    if bitrue_key and bitrue_secret:
+    # BITRUE
+    bit_key, bit_sec = os.getenv("BITRUE_API_KEY"), os.getenv("BITRUE_API_SECRET")
+    if bit_key and bit_sec:
         try:
             exchanges["bitrue"] = ccxt.bitrue(
-                {
-                    "apiKey": bitrue_key,
-                    "secret": bitrue_secret,
-                    "enableRateLimit": True,
-                }
+                {"apiKey": bit_key, "secret": bit_sec, "enableRateLimit": True}
             )
         except Exception as e:
-            print(f"❌ Fehler bei der Initialisierung von BITRUE: {e}")
+            print(f"❌ Fehler bei BITRUE: {e}")
 
-    # 4. KuCoin Initialisierung
-    kucoin_key = os.getenv("KUCOIN_API_KEY")
-    kucoin_secret = os.getenv("KUCOIN_API_SECRET")
-    kucoin_passphrase = os.getenv("KUCOIN_PASSPHRASE")
-
-    if kucoin_key and kucoin_secret and kucoin_passphrase:
+    # KUCOIN
+    kuc_key, kuc_sec, kuc_pass = (
+        os.getenv("KUCOIN_API_KEY"),
+        os.getenv("KUCOIN_API_SECRET"),
+        os.getenv("KUCOIN_PASSPHRASE"),
+    )
+    if kuc_key and kuc_sec and kuc_pass:
         try:
             exchanges["kucoin"] = ccxt.kucoin(
                 {
-                    "apiKey": kucoin_key,
-                    "secret": kucoin_secret,
-                    "password": kucoin_passphrase,
+                    "apiKey": kuc_key,
+                    "secret": kuc_sec,
+                    "password": kuc_pass,
                     "enableRateLimit": True,
                 }
             )
         except Exception as e:
-            print(f"❌ Fehler bei der Initialisierung von KuCoin: {e}")
+            print(f"❌ Fehler bei KuCoin: {e}")
 
     return exchanges
 
 
 # ============================================================
-# ⚖️ REBALANCING-PRÜFUNG
+# 🧮 REBALANCING ALGORITHMUS LOGIK
 # ============================================================
 
 
-def check_and_rebalance():
-    """Liest Guthaben aller Börsen aus und gibt Übersicht aus."""
-    print("⚖️ Starte Rebalancing-Prüfung...")
+def calculate_rebalance_plan(balances):
+    """Berechnet mathematisch den optimalen Transfer-Plan zwischen allen Börsen."""
+    total_usdt = sum(balances.values())
+    num_exchanges = len(balances)
 
+    if num_exchanges == 0:
+        return [], 0, 0
+
+    target_per_exchange = total_usdt / num_exchanges
+
+    senders = {}
+    receivers = {}
+
+    for name, amount in balances.items():
+        diff = amount - target_per_exchange
+        if diff > MIN_REBALANCE_THRESHOLD_USD:
+            senders[name] = diff
+        elif diff < -MIN_REBALANCE_THRESHOLD_USD:
+            receivers[name] = abs(diff)
+
+    transfers = []
+
+    # Greedy-Algorithmus zur Zuordnung von Sendern an Empfänger
+    for rec_name, rec_needed in list(receivers.items()):
+        needed = rec_needed
+        for send_name, send_avail in list(senders.items()):
+            if send_avail <= 0 or needed <= 0:
+                continue
+
+            amount_to_send = min(send_avail, needed)
+
+            transfers.append(
+                {
+                    "from": send_name,
+                    "to": rec_name,
+                    "amount": round(amount_to_send, 2),
+                }
+            )
+
+            senders[send_name] -= amount_to_send
+            needed -= amount_to_send
+
+    return transfers, total_usdt, target_per_exchange
+
+
+# ============================================================
+# 🚀 AUSFÜHRUNG DER TRANSFERS
+# ============================================================
+
+
+def execute_rebalance():
+    print("⚖️ Starte Rebalancing-Prüfung...")
     exchanges = init_exchanges()
+
     if not exchanges:
-        print("❌ Keine gültigen Börsen-Verbindungen gefunden.")
+        print("❌ Keine Börsenverbindungen verfügbar.")
         return
 
     balances = {}
-
     for name, exchange in exchanges.items():
         try:
             balance_data = exchange.fetch_balance()
-
-            # Abfragen des verfügbaren USDT-Guthabens
             usdt_free = 0.0
             if "USDT" in balance_data:
                 usdt_free = float(balance_data["USDT"].get("free", 0.0))
@@ -118,21 +170,75 @@ def check_and_rebalance():
 
             balances[name] = usdt_free
             print(f"💰 [{name.upper()}] Verfügbares USDT: {usdt_free:.2f}")
-
         except Exception as e:
             print(f"❌ Fehler beim Abfragen von {name}: {e}")
 
-    # Auswertung des Gesamt-Guthabens
-    if balances:
-        total_usdt = sum(balances.values())
-        avg_usdt = total_usdt / len(balances)
+    if not balances:
+        return
 
-        print("\n" + "=" * 50)
-        print(f"📊 REBALANCING ZUSAMMENFASSUNG")
-        print(f"Gesamt-USDT über alle aktiven Börsen: ${total_usdt:.2f}")
-        print(f"Ziel-Guthaben pro Börse:             ${avg_usdt:.2f}")
-        print("=" * 50)
+    transfers, total_usdt, target_amount = calculate_rebalance_plan(balances)
+
+    print("\n" + "=" * 55)
+    print("📊 REBALANCING STATUS & BERECHNUNG")
+    print(f"Gesamt-USDT über alle Börsen:  ${total_usdt:.2f}")
+    print(f"Ziel-Guthaben pro Börse:      ${target_amount:.2f}")
+    print("=" * 55)
+
+    if not transfers:
+        print(
+            f"✅ Keine Rebalancing-Aktion nötig. Alle Börsen liegen innerhalb der Toleranz (±${MIN_REBALANCE_THRESHOLD_USD:.2f})."
+        )
+        return
+
+    print(f"\n🔄 BERECHNETER TRANSFER-PLAN ({len(transfers)} Aktionen):")
+    for t in transfers:
+        print(
+            f"  ➔ Sende ${t['amount']:.2f} USDT von {t['from'].upper()} nach {t['to'].upper()}"
+        )
+
+    print("\n-------------------------------------------------------")
+
+    for t in transfers:
+        sender_name = t["from"]
+        receiver_name = t["to"]
+        amount = t["amount"]
+
+        if SIMULATION_MODE:
+            print(
+                f"🧪 [SIMULATION] WÜRDE AUSFÜHREN: ${amount:.2f} USDT von {sender_name.upper()} ➔ {receiver_name.upper()} (Netzwerk: {PREFERRED_NETWORK})"
+            )
+        else:
+            try:
+                rec_ex = exchanges[receiver_name]
+                sender_ex = exchanges[sender_name]
+
+                # Einzahlungsadresse des Empfängers abrufen
+                dep_info = rec_ex.fetch_deposit_address(
+                    "USDT", params={"network": PREFERRED_NETWORK}
+                )
+                address = dep_info["address"]
+                tag = dep_info.get("tag", None)
+
+                print(
+                    f"🚀 ECHTE AUSZAHLUNG: Sende ${amount:.2f} USDT von {sender_name.upper()} an {address} ({PREFERRED_NETWORK})..."
+                )
+
+                withdraw_res = sender_ex.withdraw(
+                    code="USDT",
+                    amount=amount,
+                    address=address,
+                    tag=tag,
+                    params={"network": PREFERRED_NETWORK},
+                )
+
+                print(
+                    f"✅ Transaktion übermittelt! ID: {withdraw_res.get('id', 'N/A')}"
+                )
+            except Exception as e:
+                print(
+                    f"❌ Fehler bei Ausführung ({sender_name} ➔ {receiver_name}): {e}"
+                )
 
 
 if __name__ == "__main__":
-    check_and_rebalance()
+    execute_rebalance()
