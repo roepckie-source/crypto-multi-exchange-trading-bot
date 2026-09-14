@@ -1,1 +1,133 @@
+name: V9 On-Chain Test
 
+on:
+  workflow_dispatch:
+
+jobs:
+  v9-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install V9 dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-v9.txt
+
+      - name: Check V9 files
+        run: |
+          echo "=============================================="
+          echo "V9 FILE CHECK"
+          echo "=============================================="
+
+          test -f v9_config.py
+          test -f v9_main.py
+          test -f v9_launch_scanner.py
+          test -f v9_contract_analyzer.py
+          test -f v9_models.py
+          test -f v9_paper_sniper.py
+          test -f v9_risk_engine.py
+          test -f v9_storage.py
+          test -f v9_wallet_intelligence.py
+
+          echo "PASS: all V9 files found"
+
+      - name: Check Python syntax
+        run: |
+          echo "=============================================="
+          echo "PYTHON SYNTAX CHECK"
+          echo "=============================================="
+
+          python -m py_compile \
+            v9_config.py \
+            v9_main.py \
+            v9_launch_scanner.py \
+            v9_contract_analyzer.py \
+            v9_models.py \
+            v9_paper_sniper.py \
+            v9_risk_engine.py \
+            v9_storage.py \
+            v9_wallet_intelligence.py
+
+          echo "PASS: Python syntax OK"
+
+      - name: Test Robinhood Chain RPC
+        run: |
+          echo "=============================================="
+          echo "ROBINHOOD CHAIN RPC TEST"
+          echo "=============================================="
+
+          python - <<'PY'
+          from web3 import Web3
+
+          RPC = "https://rpc.mainnet.chain.robinhood.com"
+
+          print(f"Connecting to: {RPC}")
+
+          w3 = Web3(
+              Web3.HTTPProvider(
+                  RPC,
+                  request_kwargs={"timeout": 10}
+              )
+          )
+
+          if not w3.is_connected():
+              raise SystemExit("FAIL: RPC connection failed")
+
+          print("PASS: RPC connection successful")
+          print(f"Chain ID: {w3.eth.chain_id}")
+          print(f"Latest block: {w3.eth.block_number}")
+
+          if w3.eth.chain_id != 4663:
+              raise SystemExit(
+                  f"FAIL: unexpected chain ID: {w3.eth.chain_id}"
+              )
+
+          print("PASS: correct Robinhood Chain ID")
+          PY
+
+      - name: V9 safety check
+        run: |
+          echo "=============================================="
+          echo "V9 SAFETY CHECK"
+          echo "=============================================="
+
+          python - <<'PY'
+          import v9_config
+
+          if getattr(v9_config, "LIVE_TRADING_ENABLED", True):
+              raise SystemExit(
+                  "FAIL: LIVE_TRADING_ENABLED must be False"
+              )
+
+          if getattr(v9_config, "PRIVATE_KEY_ENV", ""):
+              raise SystemExit(
+                  "FAIL: PRIVATE_KEY_ENV must be empty"
+              )
+
+          print("PASS: live trading disabled")
+          print("PASS: no private key configured")
+          print("PASS: V9 is PAPER ONLY")
+          PY
+
+      - name: Final report
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "V9 ON-CHAIN TEST COMPLETE"
+          echo "=============================================="
+          echo "V9 files:       PASS"
+          echo "Python syntax:  PASS"
+          echo "RPC connection: PASS"
+          echo "Chain ID:       4663"
+          echo "Live trading:   DISABLED"
+          echo "Private keys:   NONE"
+          echo "=============================================="
