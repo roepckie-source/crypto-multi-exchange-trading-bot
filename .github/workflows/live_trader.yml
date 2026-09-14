@@ -5,32 +5,44 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: live-arbitrage-single-run
+  cancel-in-progress: false
+
 jobs:
   trade:
     runs-on: ubuntu-latest
+    timeout-minutes: 9
+
     steps:
-      - name: Code auschecken
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Python einrichten
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Abhängigkeiten installieren
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install ccxt
 
-      - name: Rebalancing & Live Trader ausführen
+      - name: Check live trader
+        run: |
+          python -m py_compile live_trader.py
+          echo "✅ live_trader.py syntax check passed"
+
+      - name: Run live trader
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+
           MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
           MEXC_API_SECRET: ${{ secrets.MEXC_API_SECRET }}
+
           BITRUE_API_KEY: ${{ secrets.BITRUE_API_KEY }}
           BITRUE_API_SECRET: ${{ secrets.BITRUE_API_SECRET }}
+
         run: |
-          python rebalancer.py
           python live_trader.py
