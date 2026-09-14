@@ -9,6 +9,7 @@ except ImportError:
     print("❌ CCXT ist nicht installiert! Bitte 'pip install ccxt' ausführen.")
     sys.exit(1)
 
+
 # ============================================================
 # ⚙️ TRADER KONFIGURATION
 # ============================================================
@@ -19,7 +20,12 @@ MIN_PROFIT_THRESHOLD_PCT = 0.30
 # Fester Order-Betrag in USDT pro Arbitrage-Trade
 TRADE_AMOUNT_USDT = 10.0
 
-# Mindest-Gegenwert in USDT für den Altcoin-Auto-Cleanup (verhindert 'Min Notional'-Fehler)
+# Sicherheitsgrenzen für GitHub Actions
+# Der Trader darf niemals unendlich laufen.
+MAX_CYCLES = 28
+SCAN_INTERVAL_SECONDS = 15
+
+# Mindest-Gegenwert in USDT für den Altcoin-Auto-Cleanup
 MIN_CLEANUP_VALUE_USDT = 5.0
 
 # Zu überwachende Handelspaare
@@ -33,20 +39,26 @@ SYMBOLS_TO_SCAN = [
     "LTC/USDT",
 ]
 
+
 # ============================================================
 # 🏦 BÖRSEN INITIALISIEREN
 # ============================================================
 
-
 def init_exchanges():
     exchanges = {}
 
-    # OKX (EEA-Fix für EU)
-    okx_key, okx_sec, okx_pass = (
-        os.getenv("OKX_API_KEY"),
-        os.getenv("OKX_API_SECRET"),
-        os.getenv("OKX_PASSPHRASE"),
-    )
+    # --------------------------------------------------------
+    # OKX
+    # Bereits vorhandene GitHub Secrets:
+    # OKX_API_KEY
+    # OKX_API_SECRET
+    # OKX_PASSPHRASE
+    # --------------------------------------------------------
+
+    okx_key = os.getenv("OKX_API_KEY")
+    okx_sec = os.getenv("OKX_API_SECRET")
+    okx_pass = os.getenv("OKX_PASSPHRASE")
+
     if okx_key and okx_sec and okx_pass:
         try:
             exchanges["okx"] = ccxt.okx(
@@ -58,129 +70,275 @@ def init_exchanges():
                     "enableRateLimit": True,
                 }
             )
+
+            print("✅ OKX geladen")
+
         except Exception as e:
             print(f"❌ Fehler bei OKX: {e}")
 
+    else:
+        print("⚠️ OKX nicht geladen: API-Daten fehlen")
+
+    # --------------------------------------------------------
     # MEXC
-    mexc_key, mexc_sec = os.getenv("MEXC_API_KEY"), os.getenv("MEXC_API_SECRET")
+    # Bereits vorhandene GitHub Secrets:
+    # MEXC_API_KEY
+    # MEXC_API_SECRET
+    # --------------------------------------------------------
+
+    mexc_key = os.getenv("MEXC_API_KEY")
+    mexc_sec = os.getenv("MEXC_API_SECRET")
+
     if mexc_key and mexc_sec:
         try:
             exchanges["mexc"] = ccxt.mexc(
-                {"apiKey": mexc_key, "secret": mexc_sec, "enableRateLimit": True}
+                {
+                    "apiKey": mexc_key,
+                    "secret": mexc_sec,
+                    "enableRateLimit": True,
+                }
             )
+
+            print("✅ MEXC geladen")
+
         except Exception as e:
             print(f"❌ Fehler bei MEXC: {e}")
 
+    else:
+        print("⚠️ MEXC nicht geladen: API-Daten fehlen")
+
+    # --------------------------------------------------------
     # BITRUE
-    bit_key, bit_sec = os.getenv("BITRUE_API_KEY"), os.getenv("BITRUE_API_SECRET")
+    # Bereits vorhandene GitHub Secrets:
+    # BITRUE_API_KEY
+    # BITRUE_API_SECRET
+    # --------------------------------------------------------
+
+    bit_key = os.getenv("BITRUE_API_KEY")
+    bit_sec = os.getenv("BITRUE_API_SECRET")
+
     if bit_key and bit_sec:
         try:
             exchanges["bitrue"] = ccxt.bitrue(
-                {"apiKey": bit_key, "secret": bit_sec, "enableRateLimit": True}
+                {
+                    "apiKey": bit_key,
+                    "secret": bit_sec,
+                    "enableRateLimit": True,
+                }
             )
+
+            print("✅ BITRUE geladen")
+
         except Exception as e:
             print(f"❌ Fehler bei BITRUE: {e}")
+
+    else:
+        print("⚠️ BITRUE nicht geladen: API-Daten fehlen")
 
     return exchanges
 
 
 # ============================================================
-# 🧹 ALTCOIN AUTO-CLEANUP (MARKT-VERKAUF IN USDT)
+# 🧹 ALTCOIN AUTO-CLEANUP
 # ============================================================
 
-
 def cleanup_altcoins_to_usdt(exchanges):
-    """Prüft alle Börsen auf vorhandene Altcoins und tauscht diese direkt per Market-Sell in USDT um."""
+    """
+    Prüft alle Börsen auf vorhandene Altcoins und
+    verkauft diese direkt per Market-Sell in USDT.
+    """
+
     print("\n🧹 Starte Altcoin-Auto-Cleanup auf allen Börsen...")
 
     for name, ex in exchanges.items():
+
         ex_name = name.upper()
+
         try:
+
             balance = ex.fetch_balance()
             free_balances = balance.get("free", {})
 
             for coin, amount in free_balances.items():
-                if coin in ["USDT", "USD", "USDC"] or amount <= 0:
+
+                if coin in ["USDT", "USD", "USDC"]:
+                    continue
+
+                if amount is None or amount <= 0:
                     continue
 
                 symbol = f"{coin}/USDT"
 
                 try:
+
                     ticker = ex.fetch_ticker(symbol)
-                    current_price = ticker["last"]
+                    current_price = ticker.get("last")
+
                 except Exception:
+                    continue
+
+                if not current_price or current_price <= 0:
                     continue
 
                 estimated_value_usdt = amount * current_price
 
                 if estimated_value_usdt < MIN_CLEANUP_VALUE_USDT:
+
                     print(
-                        f"ℹ️ [{ex_name}] {coin}: Wert (${estimated_value_usdt:.2f}) unter Minimum (${MIN_CLEANUP_VALUE_USDT:.2f}). Überspringe."
+                        f"ℹ️ [{ex_name}] {coin}: "
+                        f"Wert (${estimated_value_usdt:.2f}) "
+                        f"unter Minimum "
+                        f"(${MIN_CLEANUP_VALUE_USDT:.2f}). "
+                        f"Überspringe."
                     )
+
                     continue
 
                 print(
-                    f"⚡ [{ex_name}] Tausche {amount:.4f} {coin} (~${estimated_value_usdt:.2f} USDT) per Market-Sell in USDT..."
+                    f"⚡ [{ex_name}] Tausche "
+                    f"{amount:.8f} {coin} "
+                    f"(~${estimated_value_usdt:.2f} USDT) "
+                    f"per Market-Sell in USDT..."
                 )
 
                 try:
-                    order = ex.create_market_sell_order(symbol, amount)
-                    order_id = order.get("id", "N/A")
-                    print(
-                        f"✅ [{ex_name}] Erfolgreich verkauft! Order-ID: {order_id}"
+
+                    order = ex.create_market_sell_order(
+                        symbol,
+                        amount
                     )
+
+                    order_id = order.get(
+                        "id",
+                        "N/A"
+                    )
+
+                    print(
+                        f"✅ [{ex_name}] Erfolgreich verkauft! "
+                        f"Order-ID: {order_id}"
+                    )
+
                 except Exception as e:
-                    print(f"❌ [{ex_name}] Fehler beim Verkauf von {coin}: {e}")
+
+                    print(
+                        f"❌ [{ex_name}] Fehler beim Verkauf "
+                        f"von {coin}: {e}"
+                    )
 
         except Exception as e:
-            print(f"❌ [{ex_name}] Fehler beim Abrufen des Guthabens: {e}")
+
+            print(
+                f"❌ [{ex_name}] Fehler beim Abrufen "
+                f"des Guthabens: {e}"
+            )
 
 
 # ============================================================
-# 📊 ARBITRAGE SCANNER & TRADER LOGIK
+# 📊 ARBITRAGE SCANNER
 # ============================================================
-
 
 def scan_and_trade_arbitrage(exchanges):
-    """Holt Preise ab, berechnet Spreads zwischen Börsen und führt bei Signal den Trade aus."""
+    """
+    Holt Preise ab, berechnet Spreads zwischen Börsen
+    und führt bei Erreichen des Mindestspreads einen Trade aus.
+    """
+
     ex_names = list(exchanges.keys())
-    pairs = list(itertools.permutations(ex_names, 2))
+
+    pairs = list(
+        itertools.permutations(
+            ex_names,
+            2
+        )
+    )
 
     for symbol in SYMBOLS_TO_SCAN:
+
         tickers = {}
 
-        # 1. Ticker von allen Börsen abfragen
+        # ----------------------------------------------------
+        # Ticker aller Börsen abrufen
+        # ----------------------------------------------------
+
         for name, ex in exchanges.items():
+
             try:
-                tickers[name] = ex.fetch_ticker(symbol)
-            except Exception:
+
+                tickers[name] = ex.fetch_ticker(
+                    symbol
+                )
+
+            except Exception as e:
+
+                print(
+                    f"⚠️ [{name.upper()}] "
+                    f"{symbol}: Ticker nicht verfügbar"
+                )
+
                 continue
 
-        # 2. Alle Kombinationen vergleichen (Börse A Kaufen -> Börse B Verkaufen)
+        # ----------------------------------------------------
+        # Alle Börsenkombinationen prüfen
+        # ----------------------------------------------------
+
         for buy_ex_name, sell_ex_name in pairs:
-            if buy_ex_name not in tickers or sell_ex_name not in tickers:
+
+            if buy_ex_name not in tickers:
                 continue
 
-            buy_price = tickers[buy_ex_name].get("ask")  # Kaufpreis (Ask)
-            sell_price = tickers[sell_ex_name].get("bid")  # Verkaufspreis (Bid)
-
-            if not buy_price or not sell_price or buy_price <= 0:
+            if sell_ex_name not in tickers:
                 continue
 
-            # Marge berechnen in %
-            spread_pct = ((sell_price - buy_price) / buy_price) * 100
+            buy_price = tickers[
+                buy_ex_name
+            ].get("ask")
 
-            # Verbose-Logging: Zeige auch knappe Chancen an
+            sell_price = tickers[
+                sell_ex_name
+            ].get("bid")
+
+            if not buy_price or not sell_price:
+                continue
+
+            if buy_price <= 0 or sell_price <= 0:
+                continue
+
+            spread_pct = (
+                (sell_price - buy_price)
+                / buy_price
+                * 100
+            )
+
+            # ------------------------------------------------
+            # Chancen > 0.05 % anzeigen
+            # ------------------------------------------------
+
             if spread_pct > 0.05:
+
                 print(
-                    f"🔍 {symbol} | Buy [{buy_ex_name.upper()} @ ${buy_price:.4f}] ➔ Sell [{sell_ex_name.upper()} @ ${sell_price:.4f}] | Spread: {spread_pct:+.2f}%"
+                    f"🔍 {symbol} | "
+                    f"Buy "
+                    f"[{buy_ex_name.upper()} "
+                    f"@ ${buy_price:.8f}] ➔ "
+                    f"Sell "
+                    f"[{sell_ex_name.upper()} "
+                    f"@ ${sell_price:.8f}] | "
+                    f"Spread: "
+                    f"{spread_pct:+.2f}%"
                 )
 
-            # Execution-Trigger bei Erreichen der Marge
+            # ------------------------------------------------
+            # Trading Trigger
+            # ------------------------------------------------
+
             if spread_pct >= MIN_PROFIT_THRESHOLD_PCT:
+
                 print(
-                    f"\n🚀 ARBITRAGE-SIGNAL: {symbol} (+{spread_pct:.2f}%)"
+                    f"\n🚀 ARBITRAGE-SIGNAL: "
+                    f"{symbol} "
+                    f"(+{spread_pct:.2f}%)"
                 )
+
                 execute_arbitrage_trade(
                     exchanges[buy_ex_name],
                     exchanges[sell_ex_name],
@@ -190,72 +348,254 @@ def scan_and_trade_arbitrage(exchanges):
                 )
 
 
+# ============================================================
+# 💰 ARBITRAGE TRADE AUSFÜHREN
+# ============================================================
+
 def execute_arbitrage_trade(
-    buy_exchange, sell_exchange, symbol, buy_price, amount_usdt
+    buy_exchange,
+    sell_exchange,
+    symbol,
+    buy_price,
+    amount_usdt,
 ):
-    """Führt zeitgleich die Kauf- und Verkaufsorder auf den jeweiligen Börsen aus."""
+    """
+    Führt zuerst den Kauf und anschließend
+    den Verkauf auf der anderen Börse aus.
+    """
+
     buy_name = buy_exchange.id.upper()
     sell_name = sell_exchange.id.upper()
-    coin_amount = amount_usdt / buy_price
 
-    print(
-        f"⚡ Führe Trade aus: Kaufe {coin_amount:.4f} {symbol} auf {buy_name} & verkaufe auf {sell_name}..."
+    coin_amount = (
+        amount_usdt
+        / buy_price
     )
 
+    print(
+        f"⚡ Führe Trade aus: "
+        f"Kaufe {coin_amount:.8f} {symbol} "
+        f"auf {buy_name} & "
+        f"verkaufe auf {sell_name}..."
+    )
+
+    # --------------------------------------------------------
+    # BUY
+    # --------------------------------------------------------
+
     try:
-        buy_order = buy_exchange.create_market_buy_order(symbol, coin_amount)
-        print(f"✅ [{buy_name}] Kauf ausgeführt. Order-ID: {buy_order.get('id')}")
+
+        buy_order = (
+            buy_exchange.create_market_buy_order(
+                symbol,
+                coin_amount
+            )
+        )
+
+        print(
+            f"✅ [{buy_name}] Kauf ausgeführt. "
+            f"Order-ID: "
+            f"{buy_order.get('id')}"
+        )
+
     except Exception as e:
-        print(f"❌ [{buy_name}] Kauf fehlgeschlagen: {e}")
+
+        print(
+            f"❌ [{buy_name}] Kauf fehlgeschlagen: "
+            f"{e}"
+        )
+
         return
 
+    # --------------------------------------------------------
+    # SELL
+    # --------------------------------------------------------
+
     try:
-        sell_order = sell_exchange.create_market_sell_order(
-            symbol, coin_amount
+
+        sell_order = (
+            sell_exchange.create_market_sell_order(
+                symbol,
+                coin_amount
+            )
         )
+
         print(
-            f"✅ [{sell_name}] Verkauf ausgeführt. Order-ID: {sell_order.get('id')}"
+            f"✅ [{sell_name}] Verkauf ausgeführt. "
+            f"Order-ID: "
+            f"{sell_order.get('id')}"
         )
+
     except Exception as e:
+
         print(
-            f"⚠️ [{sell_name}] Verkauf fehlgeschlagen! Coin muss über Auto-Cleanup verkauft werden. Fehler: {e}"
+            f"⚠️ [{sell_name}] Verkauf fehlgeschlagen!"
+        )
+
+        print(
+            "⚠️ Coin muss über Auto-Cleanup "
+            "verkauft werden."
+        )
+
+        print(
+            f"⚠️ Fehler: {e}"
         )
 
 
 # ============================================================
-# 🔄 MAIN LOOP & TRADING ENGINE
+# 🔄 MAIN LOOP
 # ============================================================
-
 
 def run_trader():
+
     exchanges = init_exchanges()
+
     if not exchanges:
-        print("❌ Keine Börsen geladen. Abbruch.")
+
+        print(
+            "❌ Keine Börsen geladen. Abbruch."
+        )
+
         return
 
-    print("✅ Börsen erfolgreich initialisiert!")
+    print(
+        f"\n✅ {len(exchanges)} Börsen "
+        f"erfolgreich initialisiert!"
+    )
 
-    # Vorab-Cleanup beim Start
-    cleanup_altcoins_to_usdt(exchanges)
+    # --------------------------------------------------------
+    # START-CLEANUP
+    # --------------------------------------------------------
 
-    print("\n============================================================")
-    print("🚀 STARTE LIVE TRADING & SCANNING")
-    print("============================================================")
+    cleanup_altcoins_to_usdt(
+        exchanges
+    )
+
+    print(
+        "\n============================================================"
+    )
+
+    print(
+        "🚀 STARTE LIVE TRADING & SCANNING"
+    )
+
+    print(
+        "============================================================"
+    )
+
+    print(
+        f"Ordergröße: "
+        f"{TRADE_AMOUNT_USDT:.2f} USDT"
+    )
+
+    print(
+        f"Mindestspread: "
+        f"{MIN_PROFIT_THRESHOLD_PCT:.2f}%"
+    )
+
+    print(
+        f"Maximale Durchläufe: "
+        f"{MAX_CYCLES}"
+    )
+
+    print(
+        f"Scan-Intervall: "
+        f"{SCAN_INTERVAL_SECONDS} Sekunden"
+    )
+
+    print(
+        f"Geplante Laufzeit: "
+        f"ca. "
+        f"{MAX_CYCLES * SCAN_INTERVAL_SECONDS / 60:.1f} Minuten"
+    )
 
     cycle = 0
-    while True:
-        cycle += 1
-        print(f"\n--- Durchlauf #{cycle} ---")
 
-        # Arbitrage Scannen und ausführen
-        scan_and_trade_arbitrage(exchanges)
+    # --------------------------------------------------------
+    # BEGRENZTER LIVE-LAUF
+    # --------------------------------------------------------
 
-        # Periodischer Auto-Cleanup alle 10 Durchläufe
-        if cycle % 10 == 0:
-            cleanup_altcoins_to_usdt(exchanges)
+    try:
 
-        time.sleep(15)  # Scan-Intervall auf 15 Sekunden angepasst
+        while cycle < MAX_CYCLES:
 
+            cycle += 1
+
+            print(
+                f"\n--- Durchlauf "
+                f"#{cycle}/{MAX_CYCLES} ---"
+            )
+
+            scan_and_trade_arbitrage(
+                exchanges
+            )
+
+            # ------------------------------------------------
+            # Periodischer Cleanup
+            # ------------------------------------------------
+
+            if cycle % 10 == 0:
+
+                cleanup_altcoins_to_usdt(
+                    exchanges
+                )
+
+            # ------------------------------------------------
+            # Warten bis zum nächsten Scan
+            # ------------------------------------------------
+
+            if cycle < MAX_CYCLES:
+
+                time.sleep(
+                    SCAN_INTERVAL_SECONDS
+                )
+
+    except KeyboardInterrupt:
+
+        print(
+            "\n🛑 Trader manuell beendet."
+        )
+
+    finally:
+
+        # ----------------------------------------------------
+        # ABSCHLUSS-CLEANUP
+        # ----------------------------------------------------
+
+        print(
+            "\n🧹 Abschluss-Cleanup "
+            "vor Workflow-Ende..."
+        )
+
+        cleanup_altcoins_to_usdt(
+            exchanges
+        )
+
+    print(
+        "\n============================================================"
+    )
+
+    print(
+        "✅ LIVE TRADER WORKFLOW-ZYKLUS BEENDET"
+    )
+
+    print(
+        f"   Durchläufe: "
+        f"{cycle}/{MAX_CYCLES}"
+    )
+
+    print(
+        "   Kein Endlosprozess."
+    )
+
+    print(
+        "============================================================"
+    )
+
+
+# ============================================================
+# ▶️ START
+# ============================================================
 
 if __name__ == "__main__":
     run_trader()
