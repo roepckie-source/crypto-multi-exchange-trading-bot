@@ -45,6 +45,10 @@ def log(message):
 def create_exchanges():
     exchanges = {}
 
+    # -------------------------
+    # OKX
+    # -------------------------
+
     okx_key = os.getenv("OKX_API_KEY")
     okx_sec = os.getenv("OKX_API_SECRET")
     okx_pass = os.getenv("OKX_PASSPHRASE")
@@ -57,6 +61,10 @@ def create_exchanges():
             "enableRateLimit": True,
         })
 
+    # -------------------------
+    # MEXC
+    # -------------------------
+
     mexc_key = os.getenv("MEXC_API_KEY")
     mexc_sec = os.getenv("MEXC_API_SECRET")
 
@@ -66,6 +74,10 @@ def create_exchanges():
             "secret": mexc_sec,
             "enableRateLimit": True,
         })
+
+    # -------------------------
+    # BITRUE
+    # -------------------------
 
     bit_key = os.getenv("BITRUE_API_KEY")
     bit_sec = os.getenv("BITRUE_API_SECRET")
@@ -93,10 +105,14 @@ def cleanup_altcoins_to_usdt(exchanges):
     }
 
     for exchange_name, exchange in exchanges.items():
+
         try:
             balance = exchange.fetch_balance()
 
-            for currency, data in balance.get("free", {}).items():
+            free_balances = balance.get("free", {})
+
+            for currency, data in free_balances.items():
+
                 if currency in stablecoins:
                     continue
 
@@ -146,7 +162,9 @@ def cleanup_altcoins_to_usdt(exchanges):
                     )
 
         except Exception as e:
-            log(f"{exchange_name}: cleanup failed: {e}")
+            log(
+                f"{exchange_name}: cleanup failed: {e}"
+            )
 
 
 # ============================================================
@@ -154,8 +172,12 @@ def cleanup_altcoins_to_usdt(exchanges):
 # ============================================================
 
 def get_best_prices(exchange, symbol):
+
     try:
-        orderbook = exchange.fetch_order_book(symbol, limit=5)
+        orderbook = exchange.fetch_order_book(
+            symbol,
+            limit=5
+        )
 
         bids = orderbook.get("bids", [])
         asks = orderbook.get("asks", [])
@@ -169,19 +191,29 @@ def get_best_prices(exchange, symbol):
         return best_bid, best_ask
 
     except Exception as e:
-        log(f"{exchange.id} {symbol}: orderbook error: {e}")
+
+        log(
+            f"{exchange.id} {symbol}: "
+            f"orderbook error: {e}"
+        )
+
         return None, None
 
 
 # ============================================================
-# ARBITRAGE
+# FIND BEST ARBITRAGE
 # ============================================================
 
 def find_best_arbitrage(exchanges, symbol):
+
     prices = {}
 
     for exchange_name, exchange in exchanges.items():
-        bid, ask = get_best_prices(exchange, symbol)
+
+        bid, ask = get_best_prices(
+            exchange,
+            symbol
+        )
 
         if bid is None or ask is None:
             continue
@@ -197,6 +229,7 @@ def find_best_arbitrage(exchanges, symbol):
     best_opportunity = None
 
     for buy_exchange, buy_data in prices.items():
+
         for sell_exchange, sell_data in prices.items():
 
             if buy_exchange == sell_exchange:
@@ -214,60 +247,101 @@ def find_best_arbitrage(exchanges, symbol):
                 * 100
             )
 
+            opportunity = {
+                "buy_exchange": buy_exchange,
+                "sell_exchange": sell_exchange,
+                "buy_price": buy_price,
+                "sell_price": sell_price,
+                "spread_pct": spread_pct,
+            }
+
             if (
                 best_opportunity is None
-                or spread_pct > best_opportunity["spread_pct"]
+                or spread_pct
+                > best_opportunity["spread_pct"]
             ):
-                best_opportunity = {
-                    "buy_exchange": buy_exchange,
-                    "sell_exchange": sell_exchange,
-                    "buy_price": buy_price,
-                    "sell_price": sell_price,
-                    "spread_pct": spread_pct,
-                }
+                best_opportunity = opportunity
 
     return best_opportunity
 
 
 # ============================================================
-# EXECUTE TRADE
+# EXECUTE ARBITRAGE
 # ============================================================
 
-def execute_arbitrage(exchanges, symbol, opportunity):
-    buy_exchange_name = opportunity["buy_exchange"]
-    sell_exchange_name = opportunity["sell_exchange"]
+def execute_arbitrage(
+    exchanges,
+    symbol,
+    opportunity
+):
 
-    buy_exchange = exchanges[buy_exchange_name]
-    sell_exchange = exchanges[sell_exchange_name]
+    buy_exchange_name = opportunity[
+        "buy_exchange"
+    ]
 
-    buy_price = opportunity["buy_price"]
-    sell_price = opportunity["sell_price"]
-    spread_pct = opportunity["spread_pct"]
+    sell_exchange_name = opportunity[
+        "sell_exchange"
+    ]
+
+    buy_exchange = exchanges[
+        buy_exchange_name
+    ]
+
+    sell_exchange = exchanges[
+        sell_exchange_name
+    ]
+
+    buy_price = opportunity[
+        "buy_price"
+    ]
+
+    sell_price = opportunity[
+        "sell_price"
+    ]
+
+    spread_pct = opportunity[
+        "spread_pct"
+    ]
 
     if spread_pct < MIN_PROFIT_THRESHOLD_PCT:
         return False
 
     trade_amount_usdt = TRADE_AMOUNT_USDT
 
-    amount = trade_amount_usdt / buy_price
+    amount = (
+        trade_amount_usdt
+        / buy_price
+    )
+
+    base_currency = symbol.split("/")[0]
 
     log(
         f"ARBITRAGE FOUND | {symbol} | "
-        f"BUY {buy_exchange_name} @ {buy_price:.8f} | "
-        f"SELL {sell_exchange_name} @ {sell_price:.8f} | "
+        f"BUY {buy_exchange_name} "
+        f"@ {buy_price:.8f} | "
+        f"SELL {sell_exchange_name} "
+        f"@ {sell_price:.8f} | "
         f"SPREAD {spread_pct:.4f}% | "
         f"AMOUNT {trade_amount_usdt:.2f} USDT"
     )
 
+    # --------------------------------------------------------
+    # BUY
+    # --------------------------------------------------------
+
     try:
+
         log(
-            f"Executing BUY on {buy_exchange_name}: "
-            f"{amount:.8f} {symbol.split('/')[0]}"
+            f"Executing BUY on "
+            f"{buy_exchange_name}: "
+            f"{amount:.8f} {base_currency}"
         )
 
-        buy_order = buy_exchange.create_market_buy_order(
-            symbol,
-            amount
+        buy_order = (
+            buy_exchange.create_market_buy_order(
+                symbol,
+                amount
+            )
         )
 
         log(
@@ -276,18 +350,30 @@ def execute_arbitrage(exchanges, symbol, opportunity):
         )
 
     except Exception as e:
-        log(f"BUY failed: {e}")
-        return False
 
-    try:
         log(
-            f"Executing SELL on {sell_exchange_name}: "
-            f"{amount:.8f} {symbol.split('/')[0]}"
+            f"BUY failed: {e}"
         )
 
-        sell_order = sell_exchange.create_market_sell_order(
-            symbol,
-            amount
+        return False
+
+    # --------------------------------------------------------
+    # SELL
+    # --------------------------------------------------------
+
+    try:
+
+        log(
+            f"Executing SELL on "
+            f"{sell_exchange_name}: "
+            f"{amount:.8f} {base_currency}"
+        )
+
+        sell_order = (
+            sell_exchange.create_market_sell_order(
+                symbol,
+                amount
+            )
         )
 
         log(
@@ -298,9 +384,12 @@ def execute_arbitrage(exchanges, symbol, opportunity):
         return True
 
     except Exception as e:
+
         log(
-            f"SELL failed after successful BUY: {e}"
+            "SELL failed after "
+            f"successful BUY: {e}"
         )
+
         return False
 
 
@@ -309,27 +398,38 @@ def execute_arbitrage(exchanges, symbol, opportunity):
 # ============================================================
 
 def main():
+
     log("=" * 60)
     log("LIVE ARBITRAGE BOT")
     log("=" * 60)
 
-    log(f"MAX_CYCLES = {MAX_CYCLES}")
+    log(
+        f"MAX_CYCLES = {MAX_CYCLES}"
+    )
+
     log(
         f"SCAN_INTERVAL_SECONDS = "
         f"{SCAN_INTERVAL_SECONDS}"
     )
+
     log(
         f"MIN_PROFIT_THRESHOLD_PCT = "
         f"{MIN_PROFIT_THRESHOLD_PCT}%"
     )
+
     log(
         f"TRADE_AMOUNT_USDT = "
         f"{TRADE_AMOUNT_USDT}"
     )
 
+    # --------------------------------------------------------
+    # CREATE EXCHANGES
+    # --------------------------------------------------------
+
     exchanges = create_exchanges()
 
     if not exchanges:
+
         raise RuntimeError(
             "No exchanges configured. "
             "Check API secrets."
@@ -340,4 +440,141 @@ def main():
         + ", ".join(exchanges.keys())
     )
 
-   
+    # --------------------------------------------------------
+    # INITIAL CLEANUP
+    # --------------------------------------------------------
+
+    log(
+        "Running initial balance cleanup..."
+    )
+
+    cleanup_altcoins_to_usdt(
+        exchanges
+    )
+
+    # --------------------------------------------------------
+    # MAIN TRADING LOOP
+    # --------------------------------------------------------
+
+    cycle = 0
+
+    try:
+
+        while cycle < MAX_CYCLES:
+
+            cycle += 1
+
+            log("")
+            log("=" * 60)
+            log(
+                f"CYCLE "
+                f"{cycle}/{MAX_CYCLES}"
+            )
+            log("=" * 60)
+
+            for symbol in SYMBOLS:
+
+                try:
+
+                    opportunity = (
+                        find_best_arbitrage(
+                            exchanges,
+                            symbol
+                        )
+                    )
+
+                    if not opportunity:
+
+                        log(
+                            f"{symbol}: "
+                            f"No valid arbitrage data"
+                        )
+
+                        continue
+
+                    log(
+                        f"{symbol}: "
+                        f"BUY "
+                        f"{opportunity['buy_exchange']} "
+                        f"@ "
+                        f"{opportunity['buy_price']:.8f} | "
+                        f"SELL "
+                        f"{opportunity['sell_exchange']} "
+                        f"@ "
+                        f"{opportunity['sell_price']:.8f} | "
+                        f"SPREAD "
+                        f"{opportunity['spread_pct']:.4f}%"
+                    )
+
+                    # ------------------------------------------------
+                    # TRADE ONLY IF THRESHOLD IS REACHED
+                    # ------------------------------------------------
+
+                    if (
+                        opportunity["spread_pct"]
+                        >= MIN_PROFIT_THRESHOLD_PCT
+                    ):
+
+                        execute_arbitrage(
+                            exchanges,
+                            symbol,
+                            opportunity
+                        )
+
+                except Exception as e:
+
+                    log(
+                        f"{symbol}: "
+                        f"cycle error: {e}"
+                    )
+
+            # --------------------------------------------------------
+            # PERIODIC CLEANUP
+            # --------------------------------------------------------
+
+            if cycle % 10 == 0:
+
+                log(
+                    "Running periodic cleanup..."
+                )
+
+                cleanup_altcoins_to_usdt(
+                    exchanges
+                )
+
+            # --------------------------------------------------------
+            # WAIT BEFORE NEXT CYCLE
+            # --------------------------------------------------------
+
+            if cycle < MAX_CYCLES:
+
+                time.sleep(
+                    SCAN_INTERVAL_SECONDS
+                )
+
+    finally:
+
+        # ------------------------------------------------------------
+        # FINAL CLEANUP
+        # ------------------------------------------------------------
+
+        log("")
+        log("=" * 60)
+        log("FINAL CLEANUP")
+        log("=" * 60)
+
+        cleanup_altcoins_to_usdt(
+            exchanges
+        )
+
+        log("=" * 60)
+        log("LIVE ARBITRAGE BOT FINISHED")
+        log("=" * 60)
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()
