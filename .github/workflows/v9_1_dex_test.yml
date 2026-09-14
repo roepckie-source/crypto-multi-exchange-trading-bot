@@ -1,1 +1,167 @@
+name: V9.1 DEX Intelligence Test
 
+on:
+  workflow_dispatch:
+
+jobs:
+  v9_1_dex_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-v9.txt
+
+      - name: Check V9.1 files
+        run: |
+          echo "=============================================="
+          echo "V9.1 DEX INTELLIGENCE TEST"
+          echo "=============================================="
+
+          for file in \
+            v9_config.py \
+            v9_dex_scanner.py \
+            v9_token_market.py \
+            v9_holder_tracker.py \
+            v9_dex_risk.py \
+            v9_1_scan.py
+          do
+            if [ -f "$file" ]; then
+              echo "PASS: $file"
+            else
+              echo "FAIL: $file missing"
+              exit 1
+            fi
+          done
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile \
+            v9_config.py \
+            v9_dex_scanner.py \
+            v9_token_market.py \
+            v9_holder_tracker.py \
+            v9_dex_risk.py \
+            v9_1_scan.py
+
+          echo "PASS: Python syntax"
+
+      - name: Test Robinhood Chain and Uniswap V3
+        run: |
+          python - <<'PY'
+          from web3 import Web3
+          import v9_config
+
+          RPC = v9_config.RPC_HTTP
+          FACTORY = v9_config.UNISWAP_V3_FACTORY
+
+          print("==============================================")
+          print("ROBINHOOD CHAIN / UNISWAP V3 TEST")
+          print("==============================================")
+          print(f"RPC: {RPC}")
+          print(f"Expected Chain ID: {v9_config.CHAIN_ID}")
+          print(f"Factory: {FACTORY}")
+
+          w3 = Web3(Web3.HTTPProvider(RPC, request_kwargs={"timeout": 20}))
+
+          if not w3.is_connected():
+              raise RuntimeError("RPC connection FAILED")
+
+          print("PASS: RPC connection")
+
+          chain_id = w3.eth.chain_id
+          print(f"Chain ID: {chain_id}")
+
+          if chain_id != 4663:
+              raise RuntimeError(f"Wrong chain ID: {chain_id}")
+
+          print("PASS: Chain ID 4663")
+
+          code = w3.eth.get_code(Web3.to_checksum_address(FACTORY))
+
+          if len(code) <= 2:
+              raise RuntimeError("Uniswap V3 Factory has no contract code")
+
+          print("PASS: Uniswap V3 Factory contract")
+
+          latest = w3.eth.block_number
+          print(f"Latest block: {latest}")
+
+          from_block = max(0, latest - 5)
+          to_block = latest
+
+          print(f"Scanning blocks: {from_block} -> {to_block}")
+
+          FACTORY_ABI = [
+              {
+                  "anonymous": False,
+                  "inputs": [
+                      {"indexed": True, "internalType": "address", "name": "token0", "type": "address"},
+                      {"indexed": True, "internalType": "address", "name": "token1", "type": "address"},
+                      {"indexed": False, "internalType": "uint24", "name": "fee", "type": "uint24"},
+                      {"indexed": False, "internalType": "int24", "name": "tickSpacing", "type": "int24"},
+                      {"indexed": False, "internalType": "address", "name": "pool", "type": "address"}
+                  ],
+                  "name": "PoolCreated",
+                  "type": "event"
+              }
+          ]
+
+          factory = w3.eth.contract(
+              address=Web3.to_checksum_address(FACTORY),
+              abi=FACTORY_ABI
+          )
+
+          try:
+              logs = factory.events.PoolCreated().get_logs(
+                  from_block=from_block,
+                  to_block=to_block
+              )
+          except Exception as exc:
+              print(f"WARNING: Pool log scan unavailable: {exc}")
+              logs = []
+
+          print(f"PoolCreated events found: {len(logs)}")
+
+          for event in logs:
+              args = event["args"]
+              print(
+                  "POOL:",
+                  args["pool"],
+                  "TOKEN0:",
+                  args["token0"],
+                  "TOKEN1:",
+                  args["token1"],
+                  "FEE:",
+                  args["fee"]
+              )
+
+          print("PASS: DEX scan completed")
+
+          live = getattr(v9_config, "LIVE_TRADING_ENABLED", True)
+
+          if live:
+              raise RuntimeError("SAFETY FAILURE: LIVE_TRADING_ENABLED is True")
+
+          print("PASS: Live trading disabled")
+
+          private_key = getattr(v9_config, "PRIVATE_KEY_ENV", "")
+
+          if private_key:
+              raise RuntimeError("SAFETY FAILURE: PRIVATE_KEY_ENV is not empty")
+
+          print("PASS: No private key configured")
+
+          print("==============================================")
+          print("V9.1 DEX TEST COMPLETE")
+          print("==============================================")
+          PY
