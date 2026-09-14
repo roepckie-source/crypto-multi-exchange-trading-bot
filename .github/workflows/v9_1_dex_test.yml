@@ -27,21 +27,14 @@ jobs:
           echo "V9.1 DEX INTELLIGENCE TEST"
           echo "=============================================="
 
-          for file in \
-            v9_config.py \
-            v9_dex_scanner.py \
-            v9_token_market.py \
-            v9_holder_tracker.py \
-            v9_dex_risk.py \
-            v9_1_scan.py
-          do
-            if [ -f "$file" ]; then
-              echo "PASS: $file"
-            else
-              echo "FAIL: $file missing"
-              exit 1
-            fi
-          done
+          test -f v9_config.py
+          test -f v9_dex_scanner.py
+          test -f v9_token_market.py
+          test -f v9_holder_tracker.py
+          test -f v9_dex_risk.py
+          test -f v9_1_scan.py
+
+          echo "PASS: V9.1 files"
 
       - name: Python syntax check
         run: |
@@ -55,23 +48,22 @@ jobs:
 
           echo "PASS: Python syntax"
 
-      - name: Test Robinhood Chain and Uniswap V3
+      - name: Robinhood Chain test
         run: |
           python - <<'PY'
           from web3 import Web3
           import v9_config
 
-          RPC = v9_config.RPC_HTTP
-          FACTORY = v9_config.UNISWAP_V3_FACTORY
-
           print("==============================================")
-          print("ROBINHOOD CHAIN / UNISWAP V3 TEST")
+          print("ROBINHOOD CHAIN TEST")
           print("==============================================")
-          print(f"RPC: {RPC}")
-          print(f"Expected Chain ID: {v9_config.CHAIN_ID}")
-          print(f"Factory: {FACTORY}")
 
-          w3 = Web3(Web3.HTTPProvider(RPC, request_kwargs={"timeout": 20}))
+          w3 = Web3(
+              Web3.HTTPProvider(
+                  v9_config.RPC_HTTP,
+                  request_kwargs={"timeout": 20}
+              )
+          )
 
           if not w3.is_connected():
               raise RuntimeError("RPC connection FAILED")
@@ -86,30 +78,81 @@ jobs:
 
           print("PASS: Chain ID 4663")
 
-          code = w3.eth.get_code(Web3.to_checksum_address(FACTORY))
+      - name: Uniswap V3 factory test
+        run: |
+          python - <<'PY'
+          from web3 import Web3
+          import v9_config
+
+          FACTORY = v9_config.UNISWAP_V3_FACTORY
+
+          print("==============================================")
+          print("UNISWAP V3 FACTORY TEST")
+          print("==============================================")
+          print(f"Factory: {FACTORY}")
+
+          w3 = Web3(
+              Web3.HTTPProvider(
+                  v9_config.RPC_HTTP,
+                  request_kwargs={"timeout": 20}
+              )
+          )
+
+          code = w3.eth.get_code(
+              Web3.to_checksum_address(FACTORY)
+          )
 
           if len(code) <= 2:
-              raise RuntimeError("Uniswap V3 Factory has no contract code")
+              raise RuntimeError(
+                  "Uniswap V3 Factory has no contract code"
+              )
 
-          print("PASS: Uniswap V3 Factory contract")
+          print("PASS: Uniswap V3 Factory")
 
           latest = w3.eth.block_number
           print(f"Latest block: {latest}")
 
           from_block = max(0, latest - 5)
-          to_block = latest
 
-          print(f"Scanning blocks: {from_block} -> {to_block}")
+          print(
+              f"Scanning blocks: "
+              f"{from_block} -> {latest}"
+          )
 
-          FACTORY_ABI = [
+          ABI = [
               {
                   "anonymous": False,
                   "inputs": [
-                      {"indexed": True, "internalType": "address", "name": "token0", "type": "address"},
-                      {"indexed": True, "internalType": "address", "name": "token1", "type": "address"},
-                      {"indexed": False, "internalType": "uint24", "name": "fee", "type": "uint24"},
-                      {"indexed": False, "internalType": "int24", "name": "tickSpacing", "type": "int24"},
-                      {"indexed": False, "internalType": "address", "name": "pool", "type": "address"}
+                      {
+                          "indexed": True,
+                          "internalType": "address",
+                          "name": "token0",
+                          "type": "address"
+                      },
+                      {
+                          "indexed": True,
+                          "internalType": "address",
+                          "name": "token1",
+                          "type": "address"
+                      },
+                      {
+                          "indexed": False,
+                          "internalType": "uint24",
+                          "name": "fee",
+                          "type": "uint24"
+                      },
+                      {
+                          "indexed": False,
+                          "internalType": "int24",
+                          "name": "tickSpacing",
+                          "type": "int24"
+                      },
+                      {
+                          "indexed": False,
+                          "internalType": "address",
+                          "name": "pool",
+                          "type": "address"
+                      }
                   ],
                   "name": "PoolCreated",
                   "type": "event"
@@ -118,22 +161,25 @@ jobs:
 
           factory = w3.eth.contract(
               address=Web3.to_checksum_address(FACTORY),
-              abi=FACTORY_ABI
+              abi=ABI
           )
 
           try:
               logs = factory.events.PoolCreated().get_logs(
                   from_block=from_block,
-                  to_block=to_block
+                  to_block=latest
               )
           except Exception as exc:
-              print(f"WARNING: Pool log scan unavailable: {exc}")
+              print(f"WARNING: Pool scan failed: {exc}")
               logs = []
 
-          print(f"PoolCreated events found: {len(logs)}")
+          print(
+              f"PoolCreated events found: {len(logs)}"
+          )
 
           for event in logs:
               args = event["args"]
+
               print(
                   "POOL:",
                   args["pool"],
@@ -147,18 +193,22 @@ jobs:
 
           print("PASS: DEX scan completed")
 
-          live = getattr(v9_config, "LIVE_TRADING_ENABLED", True)
+      - name: Safety check
+        run: |
+          python - <<'PY'
+          import v9_config
 
-          if live:
-              raise RuntimeError("SAFETY FAILURE: LIVE_TRADING_ENABLED is True")
+          if v9_config.LIVE_TRADING_ENABLED:
+              raise RuntimeError(
+                  "SAFETY FAILURE: live trading enabled"
+              )
+
+          if v9_config.PRIVATE_KEY_ENV:
+              raise RuntimeError(
+                  "SAFETY FAILURE: private key configured"
+              )
 
           print("PASS: Live trading disabled")
-
-          private_key = getattr(v9_config, "PRIVATE_KEY_ENV", "")
-
-          if private_key:
-              raise RuntimeError("SAFETY FAILURE: PRIVATE_KEY_ENV is not empty")
-
           print("PASS: No private key configured")
 
           print("==============================================")
