@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 
 import ccxt
 
@@ -33,7 +33,7 @@ SYMBOLS = [
 
 def log(message):
     print(
-        f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] "
+        f"[{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}] "
         f"{message}",
         flush=True,
     )
@@ -458,4 +458,65 @@ def main():
                 )
 
                 if (
-                    trade["spread
+                    trade["spread_pct"]
+                    >= MIN_PROFIT_THRESHOLD_PCT
+                ):
+
+                    execute_arbitrage(
+                        trade,
+                        exchanges,
+                    )
+
+            except Exception as e:
+
+                log(
+                    f"{symbol}: cycle error: {e}"
+                )
+
+        # ----------------------------------------------------
+        # PERIODIC CLEANUP
+        # ----------------------------------------------------
+
+        if cycle % 10 == 0:
+
+            log(
+                "Periodic balance cleanup..."
+            )
+
+            cleanup_altcoins_to_usdt(
+                exchanges
+            )
+
+        # ----------------------------------------------------
+        # WAIT
+        # ----------------------------------------------------
+
+        if cycle < MAX_CYCLES:
+
+            time.sleep(
+                SCAN_INTERVAL_SECONDS
+            )
+
+    # --------------------------------------------------------
+    # FINAL CLEANUP
+    # --------------------------------------------------------
+
+    log("")
+    log("==================================================")
+    log("FINAL CLEANUP")
+    log("==================================================")
+
+    cleanup_altcoins_to_usdt(exchanges)
+
+    log("")
+    log("==================================================")
+    log("LIVE ARBITRAGE BOT FINISHED")
+    log("==================================================")
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()
