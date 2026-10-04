@@ -2,24 +2,7 @@ name: Live Arbitrage Bot
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
-  workflow_dispatch:
-
-concurrency:
-  group: live-arbitrage-single-run
-  cancel-in-progress: false
-
-jobs:
-  trade:
-    runs-on: ubuntu-latest
-    timeout-minutes: 9
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+    - /setup-python@v5
         with:
           python-version: '3.12'
 
