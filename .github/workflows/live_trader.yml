@@ -31,7 +31,12 @@ jobs:
       - name: Check Python syntax
         run: |
           python -m py_compile v9_wallet_intelligence.py
+          python -m py_compile v9_storage.py
           python -m py_compile test_v9_wallet_intelligence.py
+          python -m py_compile test_v9_persistence.py
 
       - name: Run wallet tests
         run: python -m pytest -v test_v9_wallet_intelligence.py
+
+      - name: Run persistence tests
+        run: python -m pytest -v test_v9_persistence.py
